@@ -121,15 +121,16 @@ Follow instructions in [MYSQL_UDF.md](MYSQL_UDF.md):
 
 ```bash
 cd src/
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags --libs) -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 
-sudo cp cosine_similarity.so /usr/lib/mysql/plugin/
+sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
 ```
 
 Register in MySQL:
 ```sql
-CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';
+CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
 ```
 
 ## Database Schema
@@ -660,7 +661,7 @@ SHOW FUNCTION STATUS WHERE Db = 'your_database';
 
 -- Re-register if needed
 CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL
-SONAME 'cosine_similarity.so';
+SONAME 'mysql_cosine_similarity.so';
 ```
 
 ### "Package mysqltcl not found"

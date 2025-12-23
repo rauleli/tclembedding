@@ -59,7 +59,7 @@ set esc_texto [mysql::escape $db $texto]
 set esc_blob  [mysql::escape $db $binary_blob]
 
 # Line 213-214: Issue - categoria not escaped
-set sql "INSERT INTO youtube_test (categoria, contenido, embedding) \
+set sql "INSERT INTO youtube_rag (categoria, contenido, embedding) \
          VALUES ('$categoria', '$esc_texto', '$esc_blob')"
 ```
 
@@ -78,7 +78,7 @@ set esc_query [mysql::escape $db $binary_query]
 
 set sql "SELECT contenido, categoria,
                 cosine_similarity(embedding, '$esc_query') AS score
-         FROM youtube_test
+         FROM youtube_rag
          ORDER BY score DESC
          LIMIT $limit"
 ```
@@ -291,8 +291,8 @@ In `MYSQL_QUICKSTART.md`, emphasize:
 mysql -u root -p
 
 mysql> CREATE USER 'embedding_user'@'localhost' IDENTIFIED BY 'strong_password_here';
-mysql> GRANT SELECT, INSERT, UPDATE ON youtube_rag.* TO 'embedding_user'@'localhost';
-mysql> GRANT EXECUTE ON FUNCTION youtube_rag.cosine_similarity TO 'embedding_user'@'localhost';
+mysql> GRANT SELECT, INSERT, UPDATE ON rag.* TO 'embedding_user'@'localhost';
+mysql> GRANT EXECUTE ON FUNCTION rag.cosine_similarity TO 'embedding_user'@'localhost';
 mysql> FLUSH PRIVILEGES;
 
 # Update scripts to use embedding_user instead of root
@@ -346,7 +346,7 @@ Create `.env.example`:
 DB_HOST=localhost
 DB_USER=embedding_user
 DB_PASSWORD=change_me_in_production
-DB_NAME=youtube_rag
+DB_NAME=rag
 
 # Model Configuration
 MODEL_PATH=models/e5-small/model.onnx

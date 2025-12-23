@@ -1,5 +1,5 @@
 -- Estructura de prueba para el RAG
-CREATE TABLE IF NOT EXISTS youtube_test (
+CREATE TABLE IF NOT EXISTS youtube_rag (
     id INT AUTO_INCREMENT PRIMARY KEY,
     categoria ENUM('transcripcion', 'metadatos', 'comentario'),
     contenido TEXT,

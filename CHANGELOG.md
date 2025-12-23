@@ -41,10 +41,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SIMD Hardware Acceleration**: Soporte para aceleración por hardware SIMD (SSE/AVX) en el cálculo de similitud de coseno
+- CPU dispatching automático mediante macros de preprocesador para seleccionar la mejor implementación disponible
+
+### Changed
+- El UDF de MySQL (`cosine_similarity`) ahora utiliza detección de capacidades del compilador para maximizar el rendimiento según el CPU donde se compile
+- Comando de compilación actualizado con flags `-march=native -O3 -msse3 -msse4a` para optimización específica de arquitectura
+- Nombre del archivo de salida estandarizado a `mysql_cosine_similarity.so`
+- El UDF ahora **requiere** linkear la librería matemática (`-lm`) debido al uso de `sqrtf()` en el cálculo de magnitudes vectoriales
+
+### Technical Notes
+- **SSE3/SSE4a Path**: Procesamiento paralelo de 4 floats por iteración (óptimo para AMD Phenom II y CPUs similares)
+- **AVX Path**: Procesamiento paralelo de 8 floats por iteración (para CPUs Intel/AMD modernos)
+- **Fallback**: Implementación escalar para arquitecturas sin SIMD
+- Optimizado para la arquitectura de 384 dimensiones del modelo E5-small, permitiendo procesamiento vectorial eficiente
+- El modelo de 384 dims se procesa en 96 iteraciones SSE (384/4) o 48 iteraciones AVX (384/8)
+- **Importante**: El flag `-lm` es vital para la función `sqrtf()` usada en el cálculo de magnitudes
+
+### Build Command
+```bash
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
+```
+
 ### Planned Features
 - Windows (MSVC) build support
 - macOS universal binary support
-- Performance optimizations
 - Batch processing API
 - Support for more tokenizer formats
 - GPU acceleration options

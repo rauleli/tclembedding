@@ -45,7 +45,7 @@ set model_vocab [file join $base_dir "models" "e5-small" "tokenizer.json"]
 set db_host     "localhost"
 set db_user     "root"
 set db_password ""
-set db_database "youtube_rag"
+set db_database "rag"
 
 # Ingestion parameters
 set embedding_dim 384          ;# Number of dimensions in embeddings
@@ -93,7 +93,7 @@ if {[catch {
     puts "1. Ensure MySQL is running: sudo systemctl start mysql"
     puts "2. Verify credentials: user=$db_user, password='$db_password'"
     puts "3. Check database exists: mysql -u root -e 'SHOW DATABASES;'"
-    puts "4. Create database if needed: mysql -u root -e 'CREATE DATABASE youtube_rag;'"
+    puts "4. Create database if needed: mysql -u root -e 'CREATE DATABASE rag;'"
     exit 1
 }
 
@@ -213,7 +213,7 @@ proc ingest_document {db categoria texto} {
     #
     # Store document with embedding in database
     #
-    set sql "INSERT INTO youtube_test (categoria, contenido, embedding) \
+    set sql "INSERT INTO youtube_rag (categoria, contenido, embedding) \
              VALUES ('$categoria', '$esc_texto', '$esc_blob')"
 
     if {[catch {mysql::query $db $sql} err]} {
@@ -282,7 +282,7 @@ puts ""
 
 # Verify ingestion by counting documents
 if {[catch {
-    set total [lindex [mysql::query $db "SELECT COUNT(*) FROM youtube_test"] 0]
+    set total [lindex [mysql::query $db "SELECT COUNT(*) FROM youtube_rag"] 0]
     puts "📊 Total documents in database: $total"
 } err]} {
     puts "⚠️  Could not verify ingestion: $err"

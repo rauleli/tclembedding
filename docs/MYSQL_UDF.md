@@ -123,36 +123,45 @@ cd /path/to/tclembedding/src
 Compile using the provided compilation command:
 
 ```bash
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  -I/usr/include/mysql \
-  -L/usr/lib/x86_64-linux-gnu \
-  -lmysqlclient -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 ```
 
 **Flags explanation:**
 - `-shared` - Create shared library
 - `-fPIC` - Position-independent code
-- `-I/usr/include/mysql` - MySQL headers location
-- `-L/usr/lib/...` - MySQL library location
-- `-lmysqlclient` - Link against MySQL client library
-- `-lm` - Link math library (for sqrt)
+- `-march=native` - Optimize for the CPU where compilation occurs
+- `-O3` - Maximum optimization level for best performance
+- `-msse3` - Enable SSE3 instructions (explicit SIMD support)
+- `-msse4a` - Enable SSE4a instructions (AMD-specific optimizations for Phenom II)
+- `$(mysql_config --include)` - MySQL headers location (auto-detected)
+- `-lm` - **Required**: Link math library for `sqrtf()` in magnitude calculations
+
+**SIMD Acceleration:**
+The UDF uses hardware-accelerated vector operations:
+- **SSE3/SSE4a**: Processes 4 floats per iteration (AMD Phenom II, Intel Core 2+)
+- **AVX**: Processes 8 floats per iteration (Intel Sandy Bridge+, AMD Bulldozer+)
+- **Fallback**: Scalar processing for older CPUs
+
+For 384-dimensional embeddings (E5-small), this means:
+- SSE: 96 parallel iterations instead of 384 scalar operations
+- AVX: 48 parallel iterations for even faster processing
 
 **Platform-Specific Adjustments:**
 
 For macOS:
 ```bash
-gcc -dynamiclib -fPIC -o cosine_similarity.so rag_optimizations.c \
-  -I$(brew --prefix mysql)/include \
-  -L$(brew --prefix mysql)/lib \
-  -lmysqlclient -lm
+gcc -dynamiclib -fPIC -march=native -O3 -msse3 \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  -I$(brew --prefix mysql)/include -lm
 ```
 
 For CentOS/RHEL:
 ```bash
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  -I/usr/include/mysql \
-  -L/usr/lib64/mysql \
-  -lmysqlclient -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 ```
 
 ### 4. Verify Compilation
@@ -160,14 +169,14 @@ gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
 Check that the shared library was created:
 
 ```bash
-ls -lah cosine_similarity.so
-# -rw-r--r-- 1 user group 15K Dec 21 12:34 cosine_similarity.so
+ls -lah mysql_cosine_similarity.so
+# -rw-r--r-- 1 user group 15K Dec 21 12:34 mysql_cosine_similarity.so
 ```
 
 Test for missing symbols:
 
 ```bash
-nm cosine_similarity.so | grep "cosine_similarity"
+nm mysql_cosine_similarity.so | grep "cosine_similarity"
 # Expected: U (undefined) or T (text/code) symbols
 ```
 
@@ -181,11 +190,11 @@ mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
 # Output: plugin_dir | /usr/lib/mysql/plugin
 
 # Copy library (adjust path as needed)
-sudo cp cosine_similarity.so /usr/lib/mysql/plugin/
+sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
 
 # Set permissions
-sudo chmod 755 /usr/lib/mysql/plugin/cosine_similarity.so
-sudo chown mysql:mysql /usr/lib/mysql/plugin/cosine_similarity.so
+sudo chmod 755 /usr/lib/mysql/plugin/mysql_cosine_similarity.so
+sudo chown mysql:mysql /usr/lib/mysql/plugin/mysql_cosine_similarity.so
 ```
 
 **Alternative for custom MySQL installations:**
@@ -194,8 +203,8 @@ sudo chown mysql:mysql /usr/lib/mysql/plugin/cosine_similarity.so
 # Find your MySQL plugin directory
 PLUGIN_DIR=$(mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';" | tail -1 | awk '{print $2}')
 
-sudo cp cosine_similarity.so "$PLUGIN_DIR/"
-sudo chmod 755 "$PLUGIN_DIR/cosine_similarity.so"
+sudo cp mysql_cosine_similarity.so "$PLUGIN_DIR/"
+sudo chmod 755 "$PLUGIN_DIR/mysql_cosine_similarity.so"
 ```
 
 ### 6. Register the UDF in MySQL
@@ -210,14 +219,14 @@ Create the function:
 
 ```sql
 CREATE FUNCTION cosine_similarity RETURNS REAL
-SONAME 'cosine_similarity.so';
+SONAME 'mysql_cosine_similarity.so';
 ```
 
 **Example session:**
 ```bash
 $ mysql -u root -p
 Enter password:
-mysql> CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';
+mysql> CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
 Query OK, 0 rows affected (0.05 sec)
 
 mysql> SELECT cosine_similarity(x'3f800000', x'3f800000');
@@ -272,7 +281,7 @@ Create `/etc/mysql/udf-init.sql`:
 ```sql
 -- Automatically create UDF function on MySQL startup
 CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL
-SONAME 'cosine_similarity.so';
+SONAME 'mysql_cosine_similarity.so';
 ```
 
 **Option B: Add to database initialization**
@@ -283,7 +292,7 @@ In your application initialization:
 # Ensure UDF is registered on connection
 set db [mysql::connect -u root -db your_database]
 catch {
-    mysql::query $db "CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';"
+    mysql::query $db "CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
 }
 ```
 
@@ -468,10 +477,10 @@ Typical performance metrics:
 **Solution:**
 ```bash
 # Verify file exists and is readable
-ls -la /usr/lib/mysql/plugin/cosine_similarity.so
+ls -la /usr/lib/mysql/plugin/mysql_cosine_similarity.so
 
 # Check permissions
-sudo chmod 755 /usr/lib/mysql/plugin/cosine_similarity.so
+sudo chmod 755 /usr/lib/mysql/plugin/mysql_cosine_similarity.so
 
 # Check MySQL plugin_dir
 mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
@@ -487,8 +496,9 @@ mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
 mysql_config --cflags --libs  # Check what MySQL expects
 
 # Recompile with visible symbols
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags --libs) -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 ```
 
 ### "ERROR 1305: FUNCTION cosine_similarity does not exist"
@@ -498,7 +508,7 @@ gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
 **Solution:**
 ```sql
 -- Register the function
-CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';
+CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
 
 -- Verify registration
 SHOW FUNCTION STATUS WHERE Db = 'database_name';
@@ -549,8 +559,9 @@ mysql_config --libs
 
 ```bash
 # Automatic method (recommended)
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags) $(mysql_config --libs) -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 
 # This ensures compatibility with your MySQL installation
 ```
@@ -559,10 +570,10 @@ gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
 
 ```bash
 # List symbols used
-nm cosine_similarity.so | grep -E "mysql|UDF"
+nm mysql_cosine_similarity.so | grep -E "mysql|UDF"
 
 # Check dependencies
-ldd cosine_similarity.so
+ldd mysql_cosine_similarity.so
 # Should show: libmysqlclient.so => /usr/lib/...
 ```
 

@@ -49,7 +49,7 @@ set model_vocab [file join $base_dir "models" "e5-small" "tokenizer.json"]
 set db_host     "localhost"
 set db_user     "root"
 set db_password ""
-set db_database "youtube_rag"
+set db_database "rag"
 
 # Search parameters
 set embedding_dim 384          ;# Number of dimensions in embeddings
@@ -114,7 +114,7 @@ if {[catch {
 } err]} {
     puts "⚠️  WARNING: cosine_similarity UDF may not be registered"
     puts "   Error: $err"
-    puts "   To register: CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';"
+    puts "   To register: CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
 }
 
 # ============================================================================
@@ -215,7 +215,7 @@ proc semantic_search {db query {limit 3}} {
     #
     set sql "SELECT contenido, categoria,
                     cosine_similarity(embedding, '$esc_query') AS score
-             FROM youtube_test
+             FROM youtube_rag
              ORDER BY score DESC
              LIMIT $limit"
 
@@ -261,14 +261,14 @@ proc semantic_search {db query {limit 3}} {
         puts ""
         puts "Troubleshooting:"
         puts "1. Check if cosine_similarity UDF is registered:"
-        puts "   mysql -u root -e \"SHOW FUNCTION STATUS WHERE Db = 'youtube_rag';\""
+        puts "   mysql -u root -e \"SHOW FUNCTION STATUS WHERE Db = 'rag';\""
         puts ""
         puts "2. Verify database has documents:"
-        puts "   mysql -u root youtube_rag -e \"SELECT COUNT(*) FROM youtube_test;\""
+        puts "   mysql -u root rag -e \"SELECT COUNT(*) FROM youtube_rag;\""
         puts ""
         puts "3. If UDF missing, register it:"
-        puts "   mysql -u root youtube_rag -e \"CREATE FUNCTION cosine_similarity"
-        puts "     RETURNS REAL SONAME 'cosine_similarity.so';\""
+        puts "   mysql -u root rag -e \"CREATE FUNCTION cosine_similarity"
+        puts "     RETURNS REAL SONAME 'mysql_cosine_similarity.so';\""
         puts ""
         return [list]
     }

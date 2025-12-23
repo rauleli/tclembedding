@@ -10,7 +10,7 @@ Database schema for storing documents with embeddings.
 **Purpose:** Create the MySQL database structure for semantic search
 
 **What it does:**
-- Defines `youtube_test` table with embedding storage
+- Defines `youtube_rag` table with embedding storage
 - Sets up ENUM for content types (transcription, metadata, comment)
 - Uses BINARY(1536) for 384-dimensional embeddings
 - Includes timestamp tracking
@@ -119,9 +119,9 @@ sudo systemctl start mysql
 # Connect and create database
 mysql -u root -p
 
-mysql> CREATE DATABASE youtube_rag;
+mysql> CREATE DATABASE rag;
 mysql> CREATE USER 'rag_user'@'localhost' IDENTIFIED BY 'password';
-mysql> GRANT ALL ON youtube_rag.* TO 'rag_user'@'localhost';
+mysql> GRANT ALL ON rag.* TO 'rag_user'@'localhost';
 mysql> FLUSH PRIVILEGES;
 mysql> EXIT;
 ```
@@ -129,25 +129,26 @@ mysql> EXIT;
 ### 3. Create Database Schema
 
 ```bash
-mysql -u root -p youtube_rag < schema.sql
+mysql -u root -p rag < schema.sql
 ```
 
 ### 4. Install UDF (cosine_similarity)
 
 ```bash
 cd ../src/
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags --libs) -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 
-sudo cp cosine_similarity.so /usr/lib/mysql/plugin/
+sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
 ```
 
 Register in MySQL:
 ```sql
-mysql -u root -p youtube_rag
+mysql -u root -p rag
 
 mysql> CREATE FUNCTION cosine_similarity RETURNS REAL
-       SONAME 'cosine_similarity.so';
+       SONAME 'mysql_cosine_similarity.so';
 ```
 
 ### 5. Verify Setup
@@ -186,7 +187,7 @@ set model_vocab [file join $base_dir "models" "e5-small" "tokenizer.json"]
 
 ```tcl
 # Both scripts use:
-set db [mysql::connect -u root -db youtube_rag]
+set db [mysql::connect -u root -db rag]
 
 # Change to your credentials:
 set db [mysql::connect \
@@ -359,14 +360,14 @@ The UDF isn't registered in MySQL:
 
 ```bash
 # Check if registered
-mysql -u root -e "SHOW FUNCTION STATUS WHERE Db = 'youtube_rag';"
+mysql -u root -e "SHOW FUNCTION STATUS WHERE Db = 'rag';"
 
 # Register if needed
-mysql -u root youtube_rag -e \
-  "CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';"
+mysql -u root rag -e \
+  "CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
 ```
 
-### "Can't open shared library 'cosine_similarity.so'"
+### "Can't open shared library 'mysql_cosine_similarity.so'"
 
 The UDF file isn't in the correct location:
 
@@ -375,8 +376,8 @@ The UDF file isn't in the correct location:
 mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
 
 # Copy file there
-sudo cp src/cosine_similarity.so /usr/lib/mysql/plugin/
-sudo chmod 755 /usr/lib/mysql/plugin/cosine_similarity.so
+sudo cp src/mysql_cosine_similarity.so /usr/lib/mysql/plugin/
+sudo chmod 755 /usr/lib/mysql/plugin/mysql_cosine_similarity.so
 ```
 
 ### "Error in search SQL: ... undefined ..."
@@ -415,8 +416,8 @@ puts "Expected: [expr {384 * 4}] bytes"
 
 1. **Index frequently searched columns:**
    ```sql
-   CREATE INDEX idx_category ON youtube_test(categoria);
-   CREATE INDEX idx_created ON youtube_test(created_at);
+   CREATE INDEX idx_category ON youtube_rag(categoria);
+   CREATE INDEX idx_created ON youtube_rag(created_at);
    ```
 
 2. **Use LIMIT in searches:**

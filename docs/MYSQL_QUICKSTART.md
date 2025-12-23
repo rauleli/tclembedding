@@ -21,10 +21,11 @@ sudo systemctl start mysql
 
 ```bash
 cd src/
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags --libs) -lm
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
 
-sudo cp cosine_similarity.so /usr/lib/mysql/plugin/
+sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
 ```
 
 Register in MySQL:
@@ -33,14 +34,14 @@ mysql -u root -p
 ```
 
 ```sql
-CREATE DATABASE youtube_rag;
-CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';
+CREATE DATABASE rag;
+CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
 ```
 
 ### 3. Create Database Schema
 
 ```bash
-mysql -u root -p youtube_rag < tools/schema.sql
+mysql -u root -p rag < tools/schema.sql
 ```
 
 ### 4. Run Example Scripts
@@ -124,7 +125,7 @@ tclsh search.tcl
 ## Database Schema
 
 ```sql
-CREATE TABLE youtube_test (
+CREATE TABLE youtube_rag (
     id INT AUTO_INCREMENT PRIMARY KEY,
     categoria ENUM('transcripcion', 'metadatos', 'comentario'),
     contenido TEXT,
@@ -166,15 +167,15 @@ Or run interactively:
 tclsh
 % package require tclembedding
 % package require mysqltcl
-% set db [mysql::connect -u root -db youtube_rag]
+% set db [mysql::connect -u root -db rag]
 % set results [semantic_search $db "your query" 5]
 ```
 
 ### Check Database
 
 ```bash
-mysql -u root youtube_rag -e "SELECT COUNT(*) FROM youtube_test;"
-mysql -u root youtube_rag -e "SELECT * FROM youtube_test LIMIT 5\G"
+mysql -u root rag -e "SELECT COUNT(*) FROM youtube_rag;"
+mysql -u root rag -e "SELECT * FROM youtube_rag LIMIT 5\G"
 ```
 
 ## Troubleshooting
@@ -183,11 +184,11 @@ mysql -u root youtube_rag -e "SELECT * FROM youtube_test LIMIT 5\G"
 
 ```bash
 # Check if registered
-mysql -u root -e "SHOW FUNCTION STATUS WHERE Db = 'youtube_rag';"
+mysql -u root -e "SHOW FUNCTION STATUS WHERE Db = 'rag';"
 
 # Register if missing
-mysql -u root youtube_rag -e \
-  "CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';"
+mysql -u root rag -e \
+  "CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
 ```
 
 ### "Can't find libonnxruntime"
@@ -232,15 +233,16 @@ LIMIT 5;
 # 1. Setup (one-time)
 sudo systemctl start mysql
 cd src/
-gcc -shared -fPIC -o cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --cflags --libs) -lm
-sudo cp cosine_similarity.so /usr/lib/mysql/plugin/
+gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
+  -o mysql_cosine_similarity.so rag_optimizations.c \
+  $(mysql_config --include) -lm
+sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
 
 mysql -u root -p -e "
-  CREATE DATABASE youtube_rag;
-  CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'cosine_similarity.so';"
+  CREATE DATABASE rag;
+  CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
 
-mysql -u root -p youtube_rag < tools/schema.sql
+mysql -u root -p rag < tools/schema.sql
 
 # 2. Ingest documents
 cd tools/
@@ -250,7 +252,7 @@ tclsh ingest.tcl
 tclsh search.tcl
 
 # 4. Verify results
-mysql -u root youtube_rag -e "SELECT COUNT(*) FROM youtube_test;"
+mysql -u root rag -e "SELECT COUNT(*) FROM youtube_rag;"
 ```
 
 ## File Reference

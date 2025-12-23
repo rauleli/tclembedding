@@ -38,10 +38,10 @@ CREATE USER 'embedding_app'@'localhost'
   IDENTIFIED BY 'strong_password_here';
 
 -- Grant only necessary permissions
-GRANT SELECT, INSERT, UPDATE ON youtube_rag.*
+GRANT SELECT, INSERT, UPDATE ON rag.*
   TO 'embedding_app'@'localhost';
 
-GRANT EXECUTE ON FUNCTION youtube_rag.cosine_similarity
+GRANT EXECUTE ON FUNCTION rag.cosine_similarity
   TO 'embedding_app'@'localhost';
 
 FLUSH PRIVILEGES;
@@ -107,7 +107,7 @@ Create `.env` file (NOT in git):
 DB_HOST=localhost
 DB_USER=embedding_app
 DB_PASSWORD=your_strong_password
-DB_NAME=youtube_rag
+DB_NAME=rag
 ```
 
 Load in your Tcl scripts:
@@ -141,7 +141,7 @@ Instead of `.env` files, use system environment variables:
 export DB_USER="embedding_app"
 export DB_PASSWORD="strong_password"
 export DB_HOST="localhost"
-export DB_NAME="youtube_rag"
+export DB_NAME="rag"
 
 # Access in Tcl
 set db_user [::env DB_USER]
@@ -251,14 +251,14 @@ Regular backups are essential:
 
 ```bash
 # Daily MySQL backup
-mysqldump -u embedding_app -p youtube_rag > \
-    backup/youtube_rag_$(date +%Y%m%d).sql
+mysqldump -u embedding_app -p rag > \
+    backup/rag_$(date +%Y%m%d).sql
 
 # Encrypt backup
-gpg --encrypt backup/youtube_rag_*.sql
+gpg --encrypt backup/rag_*.sql
 
 # Store in secure location
-cp backup/youtube_rag_*.sql.gpg /secure/storage/
+cp backup/rag_*.sql.gpg /secure/storage/
 ```
 
 #### 2. Encryption at Rest
@@ -267,7 +267,7 @@ Consider encrypting sensitive data:
 
 ```sql
 -- If using MySQL 5.7.10+, enable table encryption
-ALTER TABLE youtube_test ENCRYPTION='Y';
+ALTER TABLE youtube_rag ENCRYPTION='Y';
 ```
 
 #### 3. Encryption in Transit
@@ -280,7 +280,7 @@ set db [mysql::connect \
     -host db.example.com \
     -user embedding_app \
     -password $password \
-    -db youtube_rag \
+    -db rag \
     -ssl 1 \
     -ssl_key /path/to/client-key.pem \
     -ssl_cert /path/to/client-cert.pem \
