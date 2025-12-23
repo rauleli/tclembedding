@@ -355,3 +355,11 @@ Report issues and improvements to the repository.
 - [ONNX Runtime](https://onnxruntime.ai/)
 - [Sentence Transformers](https://www.sbert.net/)
 - [TEA (Tcl Extension Architecture)](https://www.tcl.tk/doc/tea/tea.html)
+
+---
+
+## ☕ Support my work
+
+If this project has been helpful to you or saved you some development time, consider buying me a coffee! Your support helps me keep exploring new optimizations and sharing quality code.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/rauleli)
