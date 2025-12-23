@@ -42,22 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **SIMD Hardware Acceleration**: Soporte para aceleración por hardware SIMD (SSE/AVX) en el cálculo de similitud de coseno
-- CPU dispatching automático mediante macros de preprocesador para seleccionar la mejor implementación disponible
+- **SIMD Hardware Acceleration**: Support for SIMD hardware acceleration (SSE/AVX) in cosine similarity calculation
+- Automatic CPU dispatching via preprocessor macros to select the best available implementation
 
 ### Changed
-- El UDF de MySQL (`cosine_similarity`) ahora utiliza detección de capacidades del compilador para maximizar el rendimiento según el CPU donde se compile
-- Comando de compilación actualizado con flags `-march=native -O3 -msse3 -msse4a` para optimización específica de arquitectura
-- Nombre del archivo de salida estandarizado a `mysql_cosine_similarity.so`
-- El UDF ahora **requiere** linkear la librería matemática (`-lm`) debido al uso de `sqrtf()` en el cálculo de magnitudes vectoriales
+- MySQL UDF (`cosine_similarity`) now uses compiler capability detection to maximize performance based on the target CPU
+- Updated build command with `-march=native -O3 -msse3 -msse4a` flags for architecture-specific optimization
+- Standardized output filename to `mysql_cosine_similarity.so`
+- UDF now **requires** linking the math library (`-lm`) due to `sqrtf()` usage in vector magnitude calculation
 
 ### Technical Notes
-- **SSE3/SSE4a Path**: Procesamiento paralelo de 4 floats por iteración (óptimo para AMD Phenom II y CPUs similares)
-- **AVX Path**: Procesamiento paralelo de 8 floats por iteración (para CPUs Intel/AMD modernos)
-- **Fallback**: Implementación escalar para arquitecturas sin SIMD
-- Optimizado para la arquitectura de 384 dimensiones del modelo E5-small, permitiendo procesamiento vectorial eficiente
-- El modelo de 384 dims se procesa en 96 iteraciones SSE (384/4) o 48 iteraciones AVX (384/8)
-- **Importante**: El flag `-lm` es vital para la función `sqrtf()` usada en el cálculo de magnitudes
+- **SSE3/SSE4a Path**: Parallel processing of 4 floats per iteration (optimal for AMD Phenom II and similar CPUs)
+- **AVX Path**: Parallel processing of 8 floats per iteration (for modern Intel/AMD CPUs)
+- **Fallback**: Scalar implementation for architectures without SIMD
+- Optimized for E5-small model's 384-dimension architecture, enabling efficient vector processing
+- 384-dim model is processed in 96 SSE iterations (384/4) or 48 AVX iterations (384/8)
+- **Important**: The `-lm` flag is essential for the `sqrtf()` function used in magnitude calculation
 
 ### Build Command
 ```bash
