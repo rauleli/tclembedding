@@ -1,0 +1,11 @@
+# Package index for tclembedding extension (version 1.0.0)
+# This file enables automatic loading of the tclembedding Tcl extension
+
+package ifneeded tclembedding 1.0.0 \
+    [list load [file join $dir tclembedding.so] tclembedding]
+
+# Load tokenizer module if available
+if {[file exists [file join $dir tokenizer.tcl]]} {
+    package ifneeded tclembedding::tokenizer 1.0.0 \
+        [list source [file join $dir tokenizer.tcl]]
+}

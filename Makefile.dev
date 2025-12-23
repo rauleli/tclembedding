@@ -1,0 +1,62 @@
+# Makefile.dev - Development makefile for tclembedding
+# This is a convenience makefile for development before running autoconf
+#
+# Usage:
+#   make -f Makefile.dev configure    (generate configure script)
+#   make -f Makefile.dev clean        (clean generated files)
+#   make -f Makefile.dev help         (show this help)
+
+.PHONY: help configure clean distclean
+
+help:
+	@echo "tclembedding Development Makefile"
+	@echo "=================================="
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make -f Makefile.dev configure  - Generate configure script from configure.ac"
+	@echo "  make -f Makefile.dev clean      - Remove generated files"
+	@echo "  make -f Makefile.dev help       - Show this help message"
+	@echo ""
+	@echo "Typical workflow:"
+	@echo "  1. make -f Makefile.dev configure"
+	@echo "  2. ./configure"
+	@echo "  3. make"
+	@echo "  4. make install"
+	@echo ""
+
+# Generate configure script using autoconf
+configure:
+	@echo "Generating configure script..."
+	@if ! command -v autoconf >/dev/null 2>&1; then \
+		echo "Error: autoconf is not installed"; \
+		echo "Install with:"; \
+		echo "  Ubuntu/Debian: sudo apt-get install autoconf"; \
+		echo "  Fedora:        sudo dnf install autoconf"; \
+		echo "  macOS:         brew install autoconf"; \
+		exit 1; \
+	fi
+	autoconf
+	@echo "✓ Configure script generated!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  ./configure"
+	@echo "  make"
+	@echo "  make install"
+
+# Clean generated files
+clean:
+	rm -f configure
+	rm -f Makefile
+	rm -rf autom4te.cache/
+	rm -f config.log
+	rm -f config.status
+	@echo "✓ Cleaned generated files"
+
+# Distclean - remove everything generated
+distclean: clean
+	rm -f unix/Makefile
+	rm -f config.h
+	find . -name "*.o" -delete
+	find . -name "*.so" -delete
+	find . -name ".deps" -type d -exec rm -rf {} + 2>/dev/null || true
+	@echo "✓ Deep clean completed"
