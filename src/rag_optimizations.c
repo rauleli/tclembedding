@@ -15,6 +15,9 @@
 #include <immintrin.h>
 #include <math.h>
 #include <string.h>
+#ifndef my_bool
+typedef char my_bool;
+#endif
 
 // Función interna de producto punto acelerada
 static inline float dot_product(const float* a, const float* b, int n) {
