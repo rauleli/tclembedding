@@ -39,7 +39,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic dependency detection
 - TEA-compliant installation structure
 
-## [Unreleased]
+## [1.1.0] - 2024-12-24
+
+### Added
+- **FMA (Fused Multiply-Add) Support**: AVX2 implementation now uses `_mm256_fmadd_ps` for better precision and performance
+- **Efficient Horizontal Reductions**: New `hsum_sse` and `hsum_avx` functions for optimal SIMD vector summation
+- **Flexible Vector Handling**: Support for comparing vectors of different dimensions (uses minimum length)
+- **Identity Optimization**: Fast path returning 1.0 when comparing a vector with itself
+
+### Changed
+- Upgraded from SSE3/SSE4a to SSE4.1/AVX2 for modern instruction set targeting
+- Improved numerical stability using `FLT_MIN` threshold instead of exact zero comparison
+- Renamed output binary to `udf_cosine_similarity.so` for clarity
+- Enhanced build flags: `-O3 -march=native -ffast-math -fno-math-errno -flto`
+- Unified cosine similarity calculation into single-pass algorithm (dot product + magnitudes computed together)
+- Improved code organization with clear section separators
+
+### Fixed
+- Potential division by zero with near-zero magnitude vectors
+- Strict alignment validation for input blob lengths
+
+### Technical Notes
+- **AVX2 Path**: 8 floats/iteration with FMA, optimal for Haswell+ and Zen+ CPUs
+- **SSE4.1 Path**: 4 floats/iteration, fallback for older x86_64 systems
+- **Scalar Fallback**: Full portability for non-SIMD architectures
+- 384-dim vectors: 48 AVX2 iterations or 96 SSE4.1 iterations
+- 1024-dim vectors: 128 AVX2 iterations or 256 SSE4.1 iterations
+
+### Build Command
+```bash
+gcc -O3 -march=native -ffast-math -fno-math-errno -flto \
+    -shared -fPIC \
+    -o udf_cosine_similarity.so rag_optimizations.c \
+    -I/usr/include/mysql -lm
+```
+
+## [1.0.1] - 2024-12-21
 
 ### Added
 - **SIMD Hardware Acceleration**: Support for SIMD hardware acceleration (SSE/AVX) in cosine similarity calculation
@@ -59,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 384-dim model is processed in 96 SSE iterations (384/4) or 48 AVX iterations (384/8)
 - **Important**: The `-lm` flag is essential for the `sqrtf()` function used in magnitude calculation
 
-### Build Command
+### Build Command (deprecated)
 ```bash
 gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
   -o mysql_cosine_similarity.so rag_optimizations.c \
