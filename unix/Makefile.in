@@ -1,0 +1,87 @@
+# Makefile.in for tclembedding extension - Unix/Linux build
+# Generated from unix/Makefile.in by configure
+# Follows Tcl Extension Architecture (TEA) standards
+
+VPATH = @srcdir@:@srcdir@/../generic
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+
+# Tcl configuration variables (set by configure)
+TCLSH_PROG = @TCLSH_PROG@
+TCL_INCLUDE_SPEC = @TCL_INCLUDE_SPEC@
+TCL_LIB_SPEC = @TCL_LIB_SPEC@
+TCL_LIBS = @TCL_LIBS@
+TCL_EXEC_PREFIX = @TCL_EXEC_PREFIX@
+TCL_PREFIX = @TCL_PREFIX@
+TCL_PACKAGE_PATH = @TCL_PACKAGE_PATH@
+
+# Installation directories
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+libdir = @libdir@
+includedir = @includedir@
+
+# Module installation directory - where the .so file goes
+pkgdir = $(TCL_PACKAGE_PATH)/tclembedding1.0
+
+# Compilation settings
+CC = @CC@
+CFLAGS = @CFLAGS@ -fPIC -Wall -Wextra
+INSTALL = @INSTALL@
+CPPFLAGS = @CPPFLAGS@
+LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@ -lonnxruntime -lm
+
+# Compiler settings
+INCLUDE_DIRS = $(TCL_INCLUDE_SPEC) -I$(srcdir)/../generic
+
+# Source files
+SOURCES = tclembedding.c
+OBJECTS = tclembedding.o
+
+# Output library
+SHARED_LIB = tclembedding.so
+PACKAGE_NAME = tclembedding
+VERSION = 1.0.0
+
+# Default target
+all: $(SHARED_LIB)
+
+# Build the shared library
+$(SHARED_LIB): $(OBJECTS)
+	$(CC) -shared $(LDFLAGS) -o $@ $(OBJECTS) $(TCL_LIB_SPEC) $(LIBS)
+
+# Compile C source files
+%.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDE_DIRS) -c -o $@ $<
+
+# Install target
+install: $(SHARED_LIB) install-lib
+
+install-lib: $(SHARED_LIB)
+	@echo "Installing tclembedding extension..."
+	mkdir -p $(DESTDIR)$(pkgdir)
+	$(INSTALL) $(SHARED_LIB) $(DESTDIR)$(pkgdir)/
+	$(INSTALL) $(srcdir)/../pkgIndex.tcl.in $(DESTDIR)$(pkgdir)/pkgIndex.tcl
+	@if [ -f $(srcdir)/../lib/tokenizer.tcl ]; then \
+		$(INSTALL) $(srcdir)/../lib/tokenizer.tcl $(DESTDIR)$(pkgdir)/; \
+	fi
+	@echo "✓ Installation complete!"
+	@echo "  Extension installed to: $(DESTDIR)$(pkgdir)"
+
+# Test target
+test: $(SHARED_LIB)
+	@echo "Running tests..."
+	@if [ -f $(srcdir)/../tests/quick_test.tcl ]; then \
+		$(TCLSH_PROG) $(srcdir)/../tests/quick_test.tcl; \
+	fi
+
+# Clean targets
+clean:
+	rm -f $(OBJECTS) $(SHARED_LIB)
+
+distclean: clean
+	rm -f Makefile
+
+# Phony targets
+.PHONY: all install install-lib test clean distclean

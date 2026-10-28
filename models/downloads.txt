@@ -1,0 +1,41 @@
+mkdir -p models/minilm-l12
+wget -O models/minilm-l12/model.onnx https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx
+wget -O models/minilm-l12/tokenizer.json https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json
+
+mkdir -p models/e5-small
+wget -O models/e5-small/model.onnx https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/onnx/model.onnx
+wget -O models/e5-small/tokenizer.json https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/tokenizer.json
+wget -O models/e5-small/tokenizer_config.json https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/tokenizer_config.json
+
+Explicación de los Prefijos en E5
+A diferencia del MiniLM, que es un modelo de "propósito general", la familia E5 utiliza un entrenamiento de "instrucciones asimétricas". Esto sirve para mejorar la relevancia en tareas de búsqueda (Retrieval).
+
+El modelo espera que le digas qué rol juega el texto que le estás pasando:
+
+passage: (Para Ingesta) Debes anteponer esta palabra antes de generar el embedding que vas a guardar en MySQL (transcripciones, descripciones, comentarios).
+
+Ejemplo: passage: En este video visitamos el templo Kinkaku-ji en Kioto...
+
+Por qué: Le indica al modelo que este texto es una pieza de información "estática" que debe ser almacenada.
+
+query: (Para Búsqueda) Debes anteponer esta palabra al texto que el usuario (o tú mismo) escriba para buscar.
+
+Ejemplo: query: ¿En qué video hablé sobre la arquitectura de templos en Kioto?
+
+Por qué: Le indica al modelo que este texto es una pregunta y que debe buscar en el espacio vectorial algo que "encaje" como respuesta o contexto relacionado.
+
+¿Cómo afecta esto a tu código?
+Simplemente en tu función de Tcl antes de llamar a embedding::compute, debes concatenar el prefijo:
+
+Tcl
+
+# Para guardar en DB (Ingesta)
+set texto_preparado "passage: $texto_original"
+set tokens [tokenizer::tokenize $texto_preparado]
+set vector [embedding::compute $handle $tokens]
+
+# Para buscar
+set query_preparada "query: $busqueda_usuario"
+set tokens [tokenizer::tokenize $query_preparada]
+set vector [embedding::compute $handle $tokens]
+Ventaja: Esto ayuda a que el modelo no se confunda si una pregunta se parece mucho a una afirmación, separando mejor la "intención" del "dato".
