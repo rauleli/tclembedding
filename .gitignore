@@ -1,0 +1,9 @@
+.claude/
+*.o
+*.so
+*.a
+*.dll
+config.log
+config.status
+autom4te.cache/
+tclconfig/
