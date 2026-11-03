@@ -25,7 +25,7 @@ distclean: distclean-recursive
 install: install-recursive
 
 # Test targets are implemented by the configured Unix makefile.
-test test-tokenizer test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety:
+test test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety:
 	$(MAKE) -C unix $@
 
 all-recursive clean-recursive distclean-recursive install-recursive:
@@ -33,6 +33,6 @@ all-recursive clean-recursive distclean-recursive install-recursive:
 	  (cd $$dir && $(MAKE) $(@:-recursive=)); \
 	done
 
-.PHONY: all clean distclean install test test-tokenizer test-tokenizer-abi \
+.PHONY: all clean distclean install test test-tokenizer test-tokenizer-rust test-tokenizer-abi \
         test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety \
         all-recursive clean-recursive distclean-recursive install-recursive

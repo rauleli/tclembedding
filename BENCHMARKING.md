@@ -202,3 +202,61 @@ PY
 ```
 
 Create a separate empty build directory and a fresh `CARGO_TARGET_DIR`, then use the configured out-of-tree commands in `INSTALL.md` with `project_dir="$SNAPSHOT_DIR/source"`, `CARGO_NET_OFFLINE=true` and a prepared `CARGO_HOME`. Keep the TEA directory, crate cache and external Tcl/ONNX installation identified separately. Inspect the install directory and dry run before installation; run the dedicated tests from the generated Unix makefile and repeat applicable Tcl tests with only the installed directory in `TCLLIBPATH`. Record versions, fixture hashes, package loader paths and results. The tested 004-B2 environment and limitations are in `CHARACTERIZATION.md`.
+
+
+## Slice 006-A truncation measurements
+
+The observations in `CHARACTERIZATION.md` used separate foreground runs for each path, one load and one warmup per process, followed by ten timed calls on the same tokenizer. `TOKENIZERS_PARALLELISM=false` was set. Tcl timings used `clock microseconds`; process peak RSS used `/usr/bin/time` and includes loading, warmup and all calls. Short input was `hola`; long input was `[string repeat {hola } 80]`. Record input and output ID counts, median, minimum, maximum, load time, peak RSS, tokenizer SHA-256, toolchain versions and machine conditions. Do not interpret peak RSS as proof of leak freedom. The CPU frequency was not controlled and the ten-call samples are exploratory.
+
+The existing `clone_probe` command above reproduces the historical direct-versus-clone comparison. For the Tcl path, a controlled short-input sample can be obtained from an isolated build with the identified tokenizer fixture:
+
+```bash
+TCLLIBPATH="$build_dir/unix" TOKENIZER_JSON="$TOKENIZER_JSON" \
+TOKENIZERS_PARALLELISM=false /usr/bin/time -f 'peak_rss_kib=%M' "$TCLSH_PROG" <<'TCL'
+package require tokenizer 1.0.0
+set t [clock microseconds]
+tokenizer::load_vocab $::env(TOKENIZER_JSON)
+puts [list load_ms [expr {([clock microseconds]-$t)/1000.0}]]
+set text hola
+set options {-max-length 128}
+set expected [tokenizer::tokenize $text {*}$options]
+set samples {}
+for {set i 0} {$i < 10} {incr i} {
+    set t [clock microseconds]
+    set ids [tokenizer::tokenize $text {*}$options]
+    lappend samples [expr {([clock microseconds]-$t)/1000.0}]
+    if {$ids ne $expected} {error "inconsistent IDs"}
+}
+set samples [lsort -real $samples]
+puts [list min_ms [lindex $samples 0] median_ms [expr {([lindex $samples 4]+[lindex $samples 5])/2.0}] max_ms [lindex $samples 9]]
+tokenizer::free
+TCL
+```
+
+Repeat in separate runs with `options {}` and with the long synthetic text above. The 006-A research prototype and its measurement scripts are laboratory artifacts outside the repository; the experiment is not a production implementation. The Rust experiment separately timed load, clone plus destruction, configuration plus reset, and encoding. A later proposal should require exact 58-case IDs, 129-to-128 boundary and terminator preservation, default and alternating limits, error and lifecycle equivalence, restoration under injected errors and unwinding, independent interpreters and appropriate concurrency checks. Measure multiple fresh runs on the same environment before agreeing performance and peak-memory criteria; investigate regressions on the default path. Any thresholds or wider model support remain subject to separate review.
+
+
+## Slice 006-B verification and performance protocol
+
+The full `make test` now includes `test-tokenizer-rust`; it requires the hash-identified tokenizer fixture. Alternatively run the Rust tests explicitly with `TOKENIZER_JSON` set:
+
+```bash
+TOKENIZER_JSON="$TOKENIZER_JSON" CARGO_NET_OFFLINE=true \
+  cargo test --release --locked --offline --manifest-path "$project_dir/tokenizer-native/Cargo.toml"
+```
+
+For the measurements in `CHARACTERIZATION.md`, the following Tcl probe was run for both the previous and new libraries, default and `-max-length 128`, and short and long synthetic text. Set the paths to the two isolated builds, fixture and Tcl interpreter before running:
+
+```bash
+for build in "$before_build" "$after_build"; do
+  for mode in direct-short limit-short direct-long limit-long; do
+    for run in 1 2 3 4 5; do
+      TCLLIBPATH="$build/unix" TOKENIZERS_PARALLELISM=false \
+        /usr/bin/time -f 'peak_rss_kib=%M' "$TCLSH_PROG" \
+        "$project_dir/tests/tokenizer_perf.tcl" "$TOKENIZER_JSON" "$mode"
+    done
+  done
+done
+``` Each of the eight conditions used five independent processes and ten timed calls per process after a warmup. Report the median and range of process medians and the largest process peak RSS; the threshold comparison is specific to the measured environment. Keep CPU load and frequency conditions visible; the observed frequency was not fixed. The default path must be examined independently. Preserve the exact fixture hash and binary versions when repeating.
+
+The numerical regression used the 18-case serialized Tcl output and the previously transferred 42-record PyTorch reference, not a new PyTorch execution. The former retained SHA-256 `a65c2d08c270e05eae1ef27a2f0ef304d82d8292c12cca57293f436a41985e35`; the comparison table was byte-identical to the previously recorded table. Repeat the existing procedures above with the same external fixtures and retain their provenance and environment. This does not establish equivalence for arbitrary models, concurrency or padding.

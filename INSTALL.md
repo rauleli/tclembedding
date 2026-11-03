@@ -84,7 +84,7 @@ make test TOKENIZER_JSON="$TOKENIZER_JSON" MODEL_ONNX="$MODEL_ONNX" \
   SAFETY_FIXTURES="$SAFETY_FIXTURES"
 ```
 
-The full `test` target requires all three paths, reports a missing prerequisite as an error, and runs tokenizer parity and lifecycle, tokenizer C ABI, three tokenizer/embedding cases, ONNX lifecycle and synthetic safety tests. Test commands propagate failure; no full-suite test is silently skipped. Some tests hash-check the exact fixtures. Supplying a different readable file is not sufficient. This suite does not run the separate large primary-reference comparison or prove general model compatibility.
+The full `test` target requires all three paths, reports a missing prerequisite as an error, and runs tokenizer parity and lifecycle, Rust panic/restoration and same-instance concurrency checks, tokenizer C ABI, three tokenizer/embedding cases, ONNX lifecycle and synthetic safety tests. Test commands propagate failure; no full-suite test is silently skipped. Some tests hash-check the exact fixtures. Supplying a different readable file is not sufficient. This suite does not run the separate large primary-reference comparison or prove general model compatibility.
 
 To run explicitly selected subsets from the same top-level build directory:
 
@@ -92,6 +92,7 @@ To run explicitly selected subsets from the same top-level build directory:
 # No large ONNX model required; both need the identified tokenizer JSON.
 make test-tokenizer TOKENIZER_JSON="$TOKENIZER_JSON"
 make test-tokenizer-abi TOKENIZER_JSON="$TOKENIZER_JSON"
+make test-tokenizer-rust TOKENIZER_JSON="$TOKENIZER_JSON"
 # Only the generated synthetic ONNX fixture directory is required.
 make test-embedding-safety SAFETY_FIXTURES="$SAFETY_FIXTURES"
 # These require the identified external ONNX model; integration also needs tokenizer JSON.

@@ -22,6 +22,10 @@ This map identifies dependencies and possible work; it does not authorize new sl
 
 **Formally accepted**, including the source audit, local Git baseline and development publication. Commit `338dacbd3a68a19374e7ab2775ddf87055b15d4b` was rebuilt and tested from a Git archive with identified external dependencies; merge `b610fec` reconciled the histories without changing that baseline tree. Development publication is recorded; see `CHARACTERIZATION.md`. Acceptance is not a stable release and does not establish self-contained distribution, binary reproducibility, general model compatibility, concurrency or portability. It does not authorize subsequent work.
 
+## Slice 006 — tokenizer truncation performance
+
+**Formally accepted**, including characterization 006-A and correction 006-B, within the evaluated Linux x86-64 environment, tokenizer and cases. Per-instance synchronization and temporary native truncation replace per-call cloning; the accepted Tcl/C contracts and characterized outputs remain unchanged. See `CHARACTERIZATION.md` and `BENCHMARKING.md` for measurements, tests and limits. Acceptance does not establish universal performance, absence of leaks, safe concurrent handle destruction or compatibility with other models or platforms. It does not authorize subsequent work.
+
 ## Further work to evaluate
 
 For stable distribution and future publication, TEA, crate sources and ONNX Runtime acquisition and distribution need decisions; binary paths and debugging-symbol policy need review; and packaging, publication requirements and other distributions, macOS and ARM64 need separate characterization. These remain open. Existing concurrency, model compatibility and memory questions also remain open. See `INSTALL.md` and `CHARACTERIZATION.md`.
@@ -29,7 +33,7 @@ For stable distribution and future publication, TEA, crate sources and ONNX Runt
 | Topic | Evidence or decision needed |
 | --- | --- |
 | ONNX lifecycle coverage | A bounded successful-model Valgrind run was completed in 003-B1, fulfilling the requested successful-session instrumentation within its tested scope. Characterize individual initialization failures and concurrent interpreters. |
-| Truncation cloning | Measure cost and evaluate alternatives without sacrificing configuration isolation or concurrency. See `tokenizer-native/src/lib.rs`, `CHARACTERIZATION.md`. |
+| Truncation cloning | Slice 006 is formally accepted within the tested scope; broader model and concurrency characterization remains open. See `tokenizer-native/src/lib.rs` and `CHARACTERIZATION.md`. |
 | Embedding parity | The identified MiniLM PyTorch reference was compared under the conditions in `CHARACTERIZATION.md`. Extend evidence to other inputs, masks, model revisions and runtimes, and decide any compatibility criteria separately; the current observations do not establish general parity. |
 | Embedding contract | The current L2 and default truncation behavior are accepted in D-005; padding, other normalization options and future contracts require separate evidence and decisions. |
 | TEA build and installation | TEA 3.13 must be supplied externally; configured installation has been tested on one Linux environment. Resolve distribution and evaluate additional platforms; see `INSTALL.md`. |

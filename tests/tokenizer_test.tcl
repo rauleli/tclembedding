@@ -34,6 +34,15 @@ check {[tokenizer::tokenize hola] eq {0 739 143 2}} "failed load replaced curren
 check {[catch {tokenizer::tokenize hola -max-length 1}]} "invalid model-specific limit must fail"
 check {[tokenizer::tokenize hola -max-length 3] eq {0 739 2}} "truncation failed"
 check {[tokenizer::tokenize hola] eq {0 739 143 2}} "truncation affected later calls"
+set boundary_text "[string repeat {hola } 63]a"
+set boundary_full [tokenizer::tokenize $boundary_text]
+check {[llength $boundary_full] == 129} "boundary fixture is not 129 IDs"
+set boundary_limited [tokenizer::tokenize $boundary_text -max-length 128]
+check {[llength $boundary_limited] == 128 && [lindex $boundary_limited end] == 2} "boundary terminator was not retained"
+check {$boundary_limited eq [concat [lrange $boundary_full 0 126] 2]} "boundary IDs differ"
+check {[catch {tokenizer::tokenize hola -max-length 1}]} "short limit must fail"
+check {[tokenizer::tokenize hola -max-length 3] eq {0 739 2}} "alternating limit failed"
+check {[tokenizer::tokenize $boundary_text] eq $boundary_full} "default state changed after limits or error"
 check {[catch {tokenizer::tokenize hola -unknown 4}]} "unknown option must fail"
 check {[catch {tokenizer::tokenize [format %c 55296]}]} "unpaired surrogate must fail"
 tokenizer::free

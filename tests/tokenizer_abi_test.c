@@ -55,7 +55,21 @@ int main(int argc, char **argv) {
         CHECK(count == expected_sizes[i] && memcmp(ids, expected_ids[i], count * sizeof(*ids)) == 0);
         hf_ids_free(ids, count);
     }
+    hf_tokenizer *other = NULL;
+    CHECK(hf_load(argv[1], &other, &err) == 0 && other != NULL && err == NULL);
+    const uint32_t short_ids[] = {0, 739, 2};
+    const uint32_t full_ids[] = {0, 739, 143, 2};
+    CHECK(hf_encode(h, (const uint8_t *)"hola", 4, 3, &ids, &count, &err) == 0);
+    CHECK(count == 3 && memcmp(ids, short_ids, sizeof(short_ids)) == 0);
+    hf_ids_free(ids, count);
+    CHECK(hf_encode(other, (const uint8_t *)"hola", 4, 0, &ids, &count, &err) == 0);
+    CHECK(count == 4 && memcmp(ids, full_ids, sizeof(full_ids)) == 0);
+    hf_ids_free(ids, count);
     hf_tokenizer_free(h);
+    CHECK(hf_encode(other, (const uint8_t *)"hola", 4, 0, &ids, &count, &err) == 0);
+    CHECK(count == 4 && memcmp(ids, full_ids, sizeof(full_ids)) == 0);
+    hf_ids_free(ids, count);
+    hf_tokenizer_free(other);
     hf_tokenizer_free(NULL); hf_ids_free(NULL, 0); hf_error_free(NULL);
     puts("tokenizer C ABI: null, error, UTF-8 and ownership checks passed");
     return 0;

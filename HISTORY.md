@@ -16,7 +16,7 @@ A later SentencePiece C++ evaluation matched 57 of 58 cases after applying the i
 
 The greedy implementation was replaced by Rust Tokenizers through a C ABI, without a silent fallback or a requirement to preserve the vocabulary-only format. The current tree includes the integration and tests for 58 cases, lifecycle and a limited text-to-ONNX path. The Tcl interface retains existing names where applicable and adds explicit release. Sources: `DECISIONS.md`, `tokenizer-native/`, `generic/tokenizer_bridge.c` and `tests/`.
 
-A subsequent review corrected output initialization for null arguments and removed deep cloning on the untruncated path. Cloning with `-max-length` remains. Slice 001 was formally accepted with the documented outstanding issues; acceptance did not authorize a commit, publication or the automatic start of subsequent work. Technical evidence: tokenizer robustness in `CHANGELOG.md`.
+A subsequent review corrected output initialization for null arguments and removed deep cloning on the untruncated path. Cloning with `-max-length` remained at that stage; Slice 006 subsequently removed it. Slice 001 was formally accepted with the documented outstanding issues; acceptance did not authorize a commit, publication or the automatic start of subsequent work. Technical evidence: tokenizer robustness in `CHANGELOG.md`.
 
 ## Slice 004
 
@@ -25,3 +25,7 @@ An audit characterized the build and installation limitations. Subsequent work c
 ## Slice 005
 
 A source audit preceded the selective incorporation of the accepted implementation, tests and documentation into development baseline commit `338dacbd3a68a19374e7ab2775ddf87055b15d4b`. The commit was rebuilt and tested from a Git archive using identified external dependencies. Merge `b610fec` reconciled the histories without changing the baseline tree, and development publication was recorded. Slice 005 was formally accepted within these documented limits; it is not a stable release. Sources: `CHARACTERIZATION.md`, `CHANGELOG.md` and `ROADMAP.md`.
+
+## Slice 006
+
+Characterization identified deep Unigram cloning as the dominant cost of each explicit truncation call. The backend subsequently adopted per-instance synchronization and temporary native truncation with restoration and explicit failure for unusable state. Slice 006 was formally accepted within the tested Linux x86-64 environment and cases; the evidence, numerical comparisons and performance limits are in `CHARACTERIZATION.md` and `BENCHMARKING.md`. This does not establish safe concurrent handle destruction, universal performance or other-model compatibility.
