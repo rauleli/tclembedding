@@ -52,6 +52,13 @@ set embedding_dim 384          ;# Number of dimensions in embeddings
 set batch_size 100             ;# Documents to process before checkpoint
 set verbose 1                  ;# Print progress messages
 
+# Prevent underlying library diagnostics from echoing the configured password.
+proc redact_error {message} {
+    global db_password
+    if {$db_password eq ""} {return $message}
+    return [string map [list $db_password "<redacted>"] $message]
+}
+
 # ============================================================================
 # VALIDATION AND INITIALIZATION
 # ============================================================================
@@ -87,11 +94,11 @@ if {[catch {
         -db $db_database \
     ]
 } err]} {
-    puts "❌ MySQL Connection Failed: $err"
+    puts "❌ MySQL connection failed."
     puts ""
     puts "Troubleshooting:"
     puts "1. Ensure MySQL is running: sudo systemctl start mysql"
-    puts "2. Verify credentials: user=$db_user, password='$db_password'"
+    puts "2. Verify the configured username and password."
     puts "3. Check database exists: mysql -u root -e 'SHOW DATABASES;'"
     puts "4. Create database if needed: mysql -u root -e 'CREATE DATABASE rag;'"
     exit 1
@@ -111,7 +118,7 @@ if {[catch {
     tokenizer::load_vocab $model_vocab
     set handle [embedding::init_raw $model_onnx]
 } err]} {
-    puts "❌ Failed to initialize embedding model: $err"
+    puts "❌ Failed to initialize embedding model: [redact_error $err]"
     mysql::close $db
     exit 1
 }
@@ -166,7 +173,7 @@ proc ingest_document {db categoria texto} {
         set tokens [tokenizer::tokenize $texto_preparado]
         set embedding_list [embedding::compute $handle $tokens]
     } err]} {
-        puts "❌ Embedding generation failed: $err"
+        puts "❌ Embedding generation failed: [redact_error $err]"
         return 0
     }
 
@@ -217,7 +224,7 @@ proc ingest_document {db categoria texto} {
              VALUES ('$categoria', '$esc_texto', '$esc_blob')"
 
     if {[catch {mysql::query $db $sql} err]} {
-        puts "❌ Database INSERT failed: $err"
+        puts "❌ Database INSERT failed: [redact_error $err]"
         return 0
     }
 
@@ -285,7 +292,7 @@ if {[catch {
     set total [lindex [mysql::query $db "SELECT COUNT(*) FROM youtube_rag"] 0]
     puts "📊 Total documents in database: $total"
 } err]} {
-    puts "⚠️  Could not verify ingestion: $err"
+    puts "⚠️  Could not verify ingestion: [redact_error $err]"
 }
 
 # ============================================================================

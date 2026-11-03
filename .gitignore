@@ -1,4 +1,4 @@
-.claude/
+# Compiler outputs and generated configuration
 *.o
 *.so
 *.a
@@ -6,4 +6,23 @@
 config.log
 config.status
 autom4te.cache/
+/configure
+/Makefile
+/unix/Makefile
+
+# External build inputs and local caches
 tclconfig/
+target/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.*
+
+# Model weights are provided separately, not stored in this source tree
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.bin

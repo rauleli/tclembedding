@@ -14,16 +14,23 @@ tclembedding/
 │
 ├── generic/                 # Platform-independent source code
 │   ├── tclembedding.c       # Main extension C code
-│   └── tokenizer.tcl        # Tcl tokenizer module
+│   └── tokenizer_bridge.c   # Tcl to tokenizer C ABI bridge
 │
 ├── unix/                    # Unix/Linux-specific build rules
 │   └── Makefile.in          # Unix build configuration template
 │
-├── lib/                     # Tcl library modules
-│   └── tokenizer.tcl        # Tokenizer Tcl implementation
+├── tokenizer-native/        # Rust tokenizer and C ABI
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│   └── src/lib.rs
 │
 ├── tests/                   # Test suite
 │   ├── quick_test.tcl       # Basic functionality tests
+│   ├── tokenizer_test.tcl   # Tokenization and lifecycle checks
+│   ├── tokenizer_abi_test.c # C ABI error and ownership checks
+│   ├── tokenizer_cases.tcl  # Synthetic token ID fixtures
+│   ├── invalid_tokenizer.json # Malformed configuration fixture
+│   ├── tokenizer_embedding_test.tcl # Tokenization and ONNX smoke test
 │   └── VERSION              # Version file (1.0.0)
 │
 ├── models/                  # ONNX models (not distributed)
@@ -71,7 +78,7 @@ The project follows the Tcl Extension Architecture (TEA) standard for cross-plat
 
 3. **generic/** - Platform-independent C source
    - `tclembedding.c` - Main extension code
-   - `tokenizer.tcl` - Optional Tcl modules
+   - `tokenizer_bridge.c` - Tcl tokenizer commands
 
 4. **pkgIndex.tcl.in** - Package registration
    - Enables automatic package loading
@@ -125,8 +132,8 @@ After `make install`, the extension is installed to:
 $prefix/lib/tclembedding1.0/
 ├── tclembedding.so         # Compiled shared library
 ├── pkgIndex.tcl            # Package registration
-├── tokenizer.tcl           # (if present)
-└── [other Tcl modules]
+├── tcltokenizer.so         # Tcl tokenizer bridge
+└── libtclembedding_tokenizer.so # Rust tokenizer backend
 ```
 
 Where `$prefix` is specified during configure (default: `/usr/local`).
@@ -165,20 +172,20 @@ package require tclembedding
 
 The `pkgIndex.tcl` file in the installation directory enables automatic discovery:
 - Loads `tclembedding.so` (compiled C extension)
-- Optionally loads `tokenizer.tcl` (Tcl modules)
+- Loads `tcltokenizer.so` and its native tokenizer backend for `package require tokenizer`
 
 ### Module Organization
 
 ```tcl
 # Main C extension
-embedding::init
-embedding::encode
-embedding::info
+embedding::init_raw
+embedding::compute
 embedding::free
 
-# Optional Tcl modules
+# Native tokenizer
 tokenizer::load_vocab
-tokenizer::encode
+tokenizer::tokenize
+tokenizer::free
 ```
 
 ## Development Workflow

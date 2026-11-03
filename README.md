@@ -4,10 +4,7 @@ A high-performance Tcl extension for generating text embeddings using ONNX Runti
 
 ## Overview
 
-`tclembedding` provides Tcl bindings for text embedding generation using pre-trained multilingual transformer models. It leverages ONNX Runtime for efficient inference and supports models like:
-
-- `e5-small` (384 dimensions) - requires `query:` or `passage:` prefix
-- `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions) - no prefix required
+`tclembedding` provides Tcl bindings for tokenization and ONNX inference. The tokenizer loads a complete Hugging Face `tokenizer.json`; model compatibility depends on the tokenizer and ONNX signature and must be verified for each model.
 
 ## Requirements
 
@@ -16,42 +13,13 @@ A high-performance Tcl extension for generating text embeddings using ONNX Runti
   - Linux: `libonnxruntime-dev`
   - macOS: `onnx-runtime` (via Homebrew)
 - **Standard C compiler** (GCC, Clang, etc.)
+- **Rust and Cargo**, to build the native tokenizer with the committed `Cargo.lock`
 
 ## Installation
 
-### From Source (Standard TEA Installation)
+### Linux build
 
-1. **Configure the build**:
-   ```bash
-   ./configure
-   ```
-
-   Available options:
-   - `--prefix=/usr/local` - Installation prefix (default: `/usr/local`)
-   - `--with-tcl=/path/to/tcl/config` - Tcl configuration directory
-
-2. **Build the extension**:
-   ```bash
-   make
-   ```
-
-3. **Install**:
-   ```bash
-   make install
-   ```
-
-   This installs to the Tcl package path: `$prefix/lib/tclembedding1.0/`
-
-### Building Configure Script
-
-If `configure` is not present:
-
-```bash
-autoconf
-./configure
-make
-make install
-```
+See [INSTALL.md](INSTALL.md) for the configured, isolated Linux build and installation procedure, including the required external TEA 3.13 files and Tcl and ONNX settings. Other platforms and dependency distribution remain unverified.
 
 ## Quick Start
 
@@ -62,7 +30,7 @@ make install
 package require tclembedding
 package require tokenizer
 
-# Load the tokenizer vocabulary
+# Load a complete tokenizer configuration
 tokenizer::load_vocab "path/to/tokenizer.json"
 
 # Initialize the ONNX model
@@ -72,8 +40,9 @@ set handle [embedding::init_raw "path/to/model.onnx"]
 set tokens [tokenizer::tokenize "your text here"]
 set vector [embedding::compute $handle $tokens]
 
-# Clean up
+# Release the independent model and tokenizer resources.
 embedding::free $handle
+tokenizer::free
 ```
 
 ### Complete Example
@@ -85,8 +54,8 @@ package require tclembedding
 package require tokenizer
 
 # Model paths
-set model_path "models/e5-small/model.onnx"
-set tokenizer_path "models/e5-small/tokenizer.json"
+set model_path "path/to/model.onnx"
+set tokenizer_path "path/to/tokenizer.json"
 
 # 1. Load tokenizer vocabulary
 tokenizer::load_vocab $tokenizer_path
@@ -105,8 +74,9 @@ puts "Token IDs: $tokens"
 puts "Dimensions: [llength $embedding]"
 puts "First 5 values: [lrange $embedding 0 4]"
 
-# Cleanup
+# Release the model and tokenizer
 embedding::free $handle
+tokenizer::free
 ```
 
 ## API Reference
@@ -120,19 +90,21 @@ Initializes the ONNX embedding model.
 **Arguments:**
 - `model_path` - Path to ONNX model file
 
-**Returns:** A handle string (e.g., `embedding0x12345678`)
+**Returns:** An opaque handle string scoped to the current interpreter.
 
 **Errors:** Returns error if model cannot be loaded
 
 #### embedding::compute *handle* *token_id_list*
 
 Computes the embedding vector from a list of token IDs.
+The list must be nonempty and contain nonnegative signed 64-bit integers.
+Incompatible ONNX output tensors and zero or non-finite embedding norms return errors.
 
 **Arguments:**
 - `handle` - Handle returned by `embedding::init_raw`
 - `token_id_list` - Tcl list of integer token IDs (from `tokenizer::tokenize`)
 
-**Returns:** A list of floating-point numbers representing the embedding (384 dimensions for e5-small)
+**Returns:** A list of 384 floating-point numbers representing an L2-normalized embedding.
 
 **Features:**
 - Mean pooling across tokens
@@ -140,7 +112,7 @@ Computes the embedding vector from a list of token IDs.
 
 #### embedding::free *handle*
 
-Releases resources associated with the model.
+Releases the model resources and deletes the handle command. Repeated free, a freed handle or a foreign command produces an error. Renaming the handle preserves its identity; deleting it with `rename $handle {}` or destroying its interpreter also releases the resources.
 
 **Arguments:**
 - `handle` - Handle returned by `embedding::init_raw`
@@ -151,38 +123,46 @@ Releases resources associated with the model.
 
 #### tokenizer::load_vocab *json_path*
 
-Loads the vocabulary from a HuggingFace tokenizer.json file.
+Loads a complete Hugging Face `tokenizer.json`. A successful load replaces the previous tokenizer in the interpreter; a failed load leaves it intact. Vocabulary-only JSON files are not supported.
 
 **Arguments:**
 - `json_path` - Path to tokenizer.json file
 
-**Notes:**
-- Supports SentencePiece array format and flat dictionary format
-- Automatically detects special tokens (`<s>`, `</s>`, `<unk>`)
-
-#### tokenizer::tokenize *text*
+#### tokenizer::tokenize *text* ?-max-length *count*?
 
 Tokenizes input text into a list of token IDs.
 
 **Arguments:**
 - `text` - Input text string
+- `-max-length count` - Optional positive maximum number of output IDs, including special tokens. A limit smaller than the required special tokens is an error. By default truncation and padding are disabled.
 
 **Returns:** A Tcl list of integer token IDs
 
-**Features:**
-- SentencePiece-style tokenization with `▁` (U+2581) prefix for word boundaries
-- Greedy longest-match algorithm
-- Automatically adds BOS (`<s>`) and EOS (`</s>`) tokens
+The configuration supplies normalization, tokenization, added tokens and postprocessing. Errors are returned if loading or encoding fails.
+
+#### tokenizer::free
+
+Releases the loaded tokenizer. It also runs automatically when the interpreter is deleted. Calling it without a loaded tokenizer returns an error.
+
+### Evaluated model configuration
+
+The characterized model is `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, revision `e8f8c211226b894fcb81acc59f3b34ba3efd5f42`, with 384-dimensional outputs. For this revision, Sentence Transformers configures a maximum of 128 tokens and returns embeddings without L2 normalization by default. The Tcl tokenizer does not truncate by default; to match the evaluated model's truncation setting explicitly:
+
+```tcl
+set tokens [tokenizer::tokenize $text -max-length 128]
+```
+
+`embedding::compute` always applies L2 normalization; there is currently no public option to disable it. Thus its output should be compared with a separately normalized Sentence Transformers embedding, using equivalent IDs and attention masks. Different truncation or normalization settings can change vectors even when the numeric calculation is correct. The comparison covered batch size one without actual padding; padding, concurrent use and compatibility with other models are not established. Slice 003 acceptance is limited to the evaluated model, revision, environments, configurations and cases; see `CHARACTERIZATION.md` for measured errors and limits.
 
 ## Model Files
 
-Models can be obtained from HuggingFace. Each model requires:
+Models can be obtained from HuggingFace. The evaluated backend requires:
 - `model.onnx` - ONNX format neural network
-- `tokenizer.json` - SentencePiece/BPE tokenizer configuration
+- `tokenizer.json` - complete Hugging Face tokenizer configuration
 
 ### Downloading Models
 
-Models are available from HuggingFace in ONNX format:
+Model files are available from HuggingFace. The following links do not establish compatibility for models other than the revision characterized above:
 
 - **e5-small**: https://huggingface.co/intfloat/e5-small (use ONNX version)
 - **paraphrase-multilingual-MiniLM-L12-v2**: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
@@ -231,22 +211,18 @@ models/
 ## Performance
 
 - **CPU inference** with ONNX Runtime
-- **Intra-op parallelism** with configurable thread count
+- **Intra-op parallelism** configured to one thread in the current binding
 - **Sequential execution mode** for memory efficiency
 - **Mean pooling** for variable-length inputs
 
-Typical performance:
-- Model loading: <500ms
-- Single inference: 10-50ms (CPU dependent)
+Performance has not been characterized for this build.
 
 ## Architecture Details
 
 ### Tokenization
 
-- SentencePiece/Unigram style tokenization
-- Automatic special token handling (`<s>`, `</s>`, `<pad>`, `<unk>`)
-- Greedy longest-match subword splitting
-- Maximum sequence length: 128 tokens
+- Rust Tokenizers reads the complete tokenizer configuration.
+- No universal maximum length is imposed; callers may explicitly request truncation.
 
 ### Output Processing
 
@@ -258,22 +234,13 @@ Typical performance:
 ### Memory Management
 
 - Tcl-managed memory for extension state
-- Standard malloc/free for tokenizer vocabulary
+- Tokenizer state is released explicitly or during interpreter destruction
 - ONNX Runtime handles tensor memory
-- Automatic cleanup via `embedding::free`
+- ONNX sessions are released with `embedding::free`, handle deletion or interpreter destruction
 
 ## Testing
 
-Run the test suite:
-
-```bash
-make test
-```
-
-Or individually:
-```bash
-tclsh tests/quick_test.tcl
-```
+From the configured build directory, `make test` runs the full suite when the identified tokenizer JSON, ONNX model and synthetic safety fixtures are supplied. It reports missing fixtures and failed checks as errors. Tokenizer-only and safety-only targets are also available. See [INSTALL.md](INSTALL.md) for fixture preparation, commands and limits; tests do not download models.
 
 ## Troubleshooting
 
@@ -294,14 +261,7 @@ Verify the tokenizer.json format matches HuggingFace structure.
 
 ## Building from Git
 
-```bash
-git clone <repository-url>
-cd tclembedding
-autoconf
-./configure --prefix=/usr/local
-make
-make install
-```
+Use the isolated build procedure in [INSTALL.md](INSTALL.md). The existing configure/install workflow remains unverified.
 
 ## License
 
@@ -311,26 +271,12 @@ See LICENSE file for details.
 
 ### Build Configuration
 
-The extension uses standard autoconf/automake for cross-platform compatibility:
-
-```bash
-# Generate configure script
-autoconf
-
-# Configure build
-./configure
-
-# Build
-make
-
-# Clean
-make clean
-```
+The existing autoconf templates require separately supplied TEA macros. Cross-platform configure and installation have not been verified. Use the isolated Linux procedure in `INSTALL.md` for the tested build.
 
 ### Directory Structure
 
 - `generic/` - Platform-independent C source code (tclembedding.c)
-- `lib/` - Tcl library modules (tokenizer.tcl)
+- `tokenizer-native/` - Rust tokenizer and C ABI
 - `tests/` - Test suite
 - `tools/` - Utility scripts for ingestion and search
 - `docs/` - Advanced documentation (MySQL integration, RAG examples, security)
@@ -338,6 +284,12 @@ make clean
 
 ## Documentation
 
+- [BASELINE.md](BASELINE.md) - Current technical baseline
+- [HISTORY.md](HISTORY.md) - Technical history and evidence boundaries
+- [DECISIONS.md](DECISIONS.md) - Authorized decisions and open questions
+- [CHARACTERIZATION.md](CHARACTERIZATION.md) - Experimental observations
+- [BENCHMARKING.md](BENCHMARKING.md) - Reproducible checks and measurements
+- [ROADMAP.md](ROADMAP.md) - Pending work and dependencies
 - [examples.tcl](docs/examples.tcl) - Usage examples
 - [GETTING_STARTED.md](docs/GETTING_STARTED.md) - Detailed setup guide
 - [TEA_SETUP.md](docs/TEA_SETUP.md) - TEA build system details

@@ -1,0 +1,11 @@
+[package]
+name = "tclembedding_tokenizer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tokenizers = "=0.22.1"

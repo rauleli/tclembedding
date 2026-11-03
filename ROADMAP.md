@@ -1,0 +1,36 @@
+# Roadmap
+
+This map identifies dependencies and possible work; it does not authorize new slices or commit to a final order.
+
+## Slice 001 — native tokenization
+
+**Formally accepted with recognized outstanding issues.** The Rust/C/Tcl backend and tests are described in `BASELINE.md` and `CHARACTERIZATION.md`. Acceptance does not constitute a commit, publication or authorization to start another slice.
+
+## Slice 002 — ONNX lifecycle characterization and correction
+
+**Formally accepted, including characterization 002-A and correction 002-B, with recognized outstanding issues.** The binding now releases handle-owned resources on explicit free, Tcl command deletion or interpreter teardown, and cleans partial initialization. See `DECISIONS.md` and `CHARACTERIZATION.md` for contract, test evidence and limits. Acceptance does not authorize publication or automatically start Slice 003.
+
+## Slice 003 — numerical embedding correctness
+
+**Formally accepted**, including 003-A, native safety work 003-B1 and the 003-B2 primary-reference comparison, within the model, revision, environments, configurations and cases actually evaluated. The accepted L2 and truncation contract is recorded in `DECISIONS.md`; evidence and remaining limits are in `CHARACTERIZATION.md`. Acceptance does not authorize a subsequent slice or publication.
+
+## Slice 004 — build, installation and test infrastructure
+
+**Formally accepted**, including 004-A and 004-B1 through 004-B3, for the evaluated Linux x86-64 environment and the identified, previously available external dependencies. The evidence covers TEA configuration, prefix and `DESTDIR` installation, a working-tree source snapshot build and the root test entry point; see `CHARACTERIZATION.md` and `INSTALL.md`. Acceptance does not establish bit reproducibility, a complete build from the current `HEAD`, self-contained distribution or compatibility with other platforms. It does not authorize publication or subsequent work.
+
+## Further work to evaluate
+
+Before publication, the required source files must be properly incorporated into version control; TEA, crate sources and ONNX Runtime acquisition and distribution need decisions; binary paths and debugging-symbol policy need review; and packaging, publication requirements and other distributions, macOS and ARM64 need separate characterization. These remain open. Existing concurrency, model compatibility and memory questions also remain open. See `INSTALL.md` and `CHARACTERIZATION.md`.
+
+| Topic | Evidence or decision needed |
+| --- | --- |
+| ONNX lifecycle coverage | A bounded successful-model Valgrind run was completed in 003-B1, fulfilling the requested successful-session instrumentation within its tested scope. Characterize individual initialization failures and concurrent interpreters. |
+| Truncation cloning | Measure cost and evaluate alternatives without sacrificing configuration isolation or concurrency. See `tokenizer-native/src/lib.rs`, `CHARACTERIZATION.md`. |
+| Embedding parity | The identified MiniLM PyTorch reference was compared under the conditions in `CHARACTERIZATION.md`. Extend evidence to other inputs, masks, model revisions and runtimes, and decide any compatibility criteria separately; the current observations do not establish general parity. |
+| Embedding contract | The current L2 and default truncation behavior are accepted in D-005; padding, other normalization options and future contracts require separate evidence and decisions. |
+| TEA build and installation | TEA 3.13 must be supplied externally; configured installation has been tested on one Linux environment. Resolve distribution and evaluate additional platforms; see `INSTALL.md`. |
+| Memory and concurrency | A bounded 20-inference Valgrind run was completed; extend scenarios across interpreters and threads and investigate possibly lost memory without premature attribution. |
+| Native validation coverage | Exercise null or non-tensor outputs, inconsistent element counts, unobserved size overflows and individual failure paths where reproducible; evaluate vocabulary validation without assuming model limits. |
+| Additional models | Select each model only after identifying tokenizer, signature, limit, pooling and parity evidence. The current backend does not guarantee universal support. |
+
+Autonomous retrieval, its consumers and any later integration need their own contracts and authorizations. No additional storage engine or application is decided here.
