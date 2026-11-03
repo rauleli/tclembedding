@@ -196,6 +196,38 @@ mod tests {
     }
 
     #[test]
+    fn invalidated_loaded_handle_can_be_freed_and_recreated() {
+        let path = std::env::var("TOKENIZER_JSON").expect("set TOKENIZER_JSON to the identified test fixture");
+        let path = CString::new(path).unwrap();
+        let mut handle = ptr::null_mut();
+        let mut error = ptr::null_mut();
+        assert_eq!(unsafe { hf_load(path.as_ptr(), &mut handle, &mut error) }, 0);
+        assert!(!handle.is_null() && error.is_null());
+        let status = unsafe { wrap(&mut error, || {
+            encode_locked(&*handle, 128, |tokenizer| {
+                assert_eq!(tokenizer.get_truncation().unwrap().max_length, 128);
+                panic!("synthetic panic after mutation")
+            })?;
+            Ok(())
+        }) };
+        assert_eq!(status, 1);
+        assert!(!error.is_null());
+        assert_eq!(unsafe { CStr::from_ptr(error) }.to_str().unwrap(), "panic while processing tokenization");
+        unsafe { hf_error_free(error); }
+        error = ptr::null_mut();
+        assert_ffi_error(unsafe { &*handle }, "tokenizer unavailable after panic");
+        unsafe { hf_tokenizer_free(handle); }
+        handle = ptr::null_mut();
+        assert_eq!(unsafe { hf_load(path.as_ptr(), &mut handle, &mut error) }, 0);
+        assert!(!handle.is_null() && error.is_null());
+        let mut ids = ptr::null_mut();
+        let mut count = 0;
+        assert_eq!(unsafe { hf_encode(handle, b"hola".as_ptr(), 4, 0, &mut ids, &mut count, &mut error) }, 0);
+        assert_eq!(unsafe { std::slice::from_raw_parts(ids, count) }, &[0, 739, 143, 2]);
+        unsafe { hf_ids_free(ids, count); hf_tokenizer_free(handle); }
+    }
+
+    #[test]
     fn poisoned_mutex_fails_closed() {
         let handle = test_handle();
         let _ = catch_unwind(AssertUnwindSafe(|| {

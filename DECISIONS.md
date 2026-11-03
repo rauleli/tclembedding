@@ -14,6 +14,8 @@ The previous greedy search differed from Unigram, while the Rust/C ABI path matc
 
 The current interface retains `tokenizer::load_vocab` and `tokenizer::tokenize` and adds `tokenizer::free`. Truncation is optional; no universal limit is imposed. The retained names do not imply support for vocabulary-only files. Sources: `README.md`, `generic/tokenizer_bridge.c`, `tokenizer-native/src/lib.rs`.
 
+The accepted Slice 006 implementation serializes encoding per tokenizer instance. If an encoding panics, it attempts to restore the previous truncation configuration and marks that instance unusable; later calls return a controlled error. A poisoned mutex also returns an error without using the state. The instance can be released, and a successful `tokenizer::load_vocab` creates a replacement; a failed load retains the existing state. This does not authorize freeing an active handle concurrently or establish recovery from process aborts or invalid pointers. Sources: `tokenizer-native/src/lib.rs`, `generic/tokenizer_bridge.c`, `CHARACTERIZATION.md`.
+
 ## D-003 — ONNX handle ownership
 
 **Status: authorized, implemented and formally accepted as part of Slice 002, with the outstanding issues recorded in `ROADMAP.md`.** Each successful `embedding::init_raw` creates a new interpreter-owned command and independent binding state; it does not reinitialize an existing handle. `embedding::free` deletes that command; its delete callback releases the session, options, environment reference and state. Deleting the command with `rename` or destroying the interpreter invokes the same callback. A renamed command remains the same handle. Unknown, foreign or freed handles return errors, as does repeated free. Partial initialization uses the same native cleanup.
@@ -37,7 +39,7 @@ The model's default `SentenceTransformer.encode()` output is not L2-normalized; 
 | Supported model families and revisions; numerical references and tolerances | Pending evidence and decision. |
 | Additional ONNX inference contracts, pooling variants, dimensions and normalization options | Pending; the current L2 and truncation behavior is accepted as described in D-005. |
 | General compatibility, cross-platform distribution and model-specific limits | Pending. |
-| Truncation clone cost and concurrency | Pending characterization and selection. |
+| Broader tokenizer concurrency and concurrent handle destruction | Pending evidence; Slice 006 removed per-call truncation cloning within its accepted scope. |
 | Alternative backends or formats for future models | Pending; future models are not assumed to use `tokenizer.json`. |
 
 Retrieval and consumer integration require separate contracts and authorization.

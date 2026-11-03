@@ -34,6 +34,27 @@ check {[tokenizer::tokenize hola] eq {0 739 143 2}} "failed load replaced curren
 check {[catch {tokenizer::tokenize hola -max-length 1}]} "invalid model-specific limit must fail"
 check {[tokenizer::tokenize hola -max-length 3] eq {0 739 2}} "truncation failed"
 check {[tokenizer::tokenize hola] eq {0 739 143 2}} "truncation affected later calls"
+foreach {limit expected} {
+    2 {0 2} 3 {0 739 2} 128 {0 739 143 2}
+    9223372036854775806 {0 739 143 2} 9223372036854775807 {0 739 143 2}
+    0x7fffffffffffffff {0 739 143 2} 0x80 {0 739 143 2}
+    +3 {0 739 2} 0b11 {0 739 2} 0o3 {0 739 2}
+} {
+    check {[tokenizer::tokenize hola -max-length $limit] eq $expected} "valid limit $limit changed IDs"
+}
+foreach limit {
+    0 -1 -9223372036854775808 -9223372036854775809
+    9223372036854775808 18446744073709551615 18446744073709551617
+    -18446744073709551613 -18446744073709551488 -18446744073709551615
+    -18446744073709551616 999999999999999999999999999999999
+    0xffffffffffffffff 1.5 not-an-integer
+} {
+    check {[catch {tokenizer::tokenize hola -max-length $limit}]} "invalid limit $limit accepted"
+    check {[tokenizer::tokenize hola] eq {0 739 143 2}} "handle changed after invalid limit $limit"
+}
+check {[catch {tokenizer::tokenize hola -max-length 1} message]} "limit 1 must fail"
+check {$message eq "max_length is smaller than the required special tokens"} "limit 1 error changed"
+check {[tokenizer::tokenize hola] eq {0 739 143 2}} "handle changed after limit 1"
 set boundary_text "[string repeat {hola } 63]a"
 set boundary_full [tokenizer::tokenize $boundary_text]
 check {[llength $boundary_full] == 129} "boundary fixture is not 129 IDs"

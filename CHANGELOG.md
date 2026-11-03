@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Slice 006 — post-acceptance corrective maintenance
+
+* Validate the original Tcl `-max-length` integer's sign and range before wide conversion, preventing out-of-range negative values from wrapping into accepted positive limits. The existing model-specific limit 1 behavior and valid token IDs are retained.
+* Added regression coverage for integer boundaries and for freeing an owned Rust tokenizer invalidated by an injected panic, followed by loading and using a new instance. Focused checks and the complete test suite passed with the identified fixtures; no change to the formal Slice 006 acceptance is implied.
+
 ### Slice 006 — tokenizer truncation performance
 
 * Formally accepted 006-A and 006-B within the evaluated Linux x86-64 environment, model and cases. The accepted Tcl/C contracts, token IDs and characterized ONNX outputs remain unchanged; see `CHARACTERIZATION.md` for the seven Rust tests, 58 cases, numerical regression and five-process measurements. Acceptance does not establish universal performance, absence of leaks, safe concurrent handle destruction or compatibility with other models or platforms.

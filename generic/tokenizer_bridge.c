@@ -1,4 +1,5 @@
 #include <tcl.h>
+#include <tclTomMathDecls.h>
 #include <stdint.h>
 #include <limits.h>
 #include <string.h>
@@ -63,6 +64,17 @@ static int EncodeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *con
     if (objc == 4) {
         if (strcmp(Tcl_GetString(objv[2]), "-max-length") != 0) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj("expected -max-length", -1)); return TCL_ERROR;
+        }
+        mp_int exact;
+        if (Tcl_GetBignumFromObj(interp, objv[3], &exact) != TCL_OK) return TCL_ERROR;
+        int negative = mp_isneg(&exact);
+        int too_large = mp_count_bits(&exact) > 63;
+        mp_clear(&exact);
+        if (negative) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("max-length must be positive", -1)); return TCL_ERROR;
+        }
+        if (too_large) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("integer value too large to represent", -1)); return TCL_ERROR;
         }
         if (Tcl_GetWideIntFromObj(interp, objv[3], &limit) != TCL_OK) return TCL_ERROR;
         if (limit < 1 || (uint64_t)limit > SIZE_MAX) {
