@@ -1,6 +1,6 @@
 # Technical baseline
 
-Slices 001, 002, 003 and 004 were formally accepted with documented outstanding issues; acceptance did not imply a commit, publication or authorization to begin another slice. Slice 003 acceptance is limited to the model, revision, environments, configurations and cases actually evaluated. Slice 004 acceptance is limited to the evaluated Linux x86-64 build, installation and test environment with identified external dependencies; it does not establish a complete build from current `HEAD` alone, self-contained distribution, binary reproducibility or other-platform compatibility. The behavior below is based on the present code and tests and does not imply general model compatibility.
+Slices 001–005 were formally accepted with documented outstanding issues. Slice 003 acceptance is limited to the model, revision, environments, configurations and cases actually evaluated. Slice 004 acceptance is limited to the evaluated Linux x86-64 build, installation and test environment with identified external dependencies. Slice 005 established and published a development Git baseline; it does not establish binary reproducibility, self-contained distribution, general model compatibility, concurrency or other-platform compatibility. Acceptance does not authorize subsequent work. The behavior below is based on the present code and tests and does not imply general model compatibility.
 
 ## Components
 

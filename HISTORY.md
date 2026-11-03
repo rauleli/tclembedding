@@ -20,4 +20,8 @@ A subsequent review corrected output initialization for null arguments and remov
 
 ## Slice 004
 
-An audit characterized the build and installation limitations. Subsequent work connected externally supplied TEA 3.13 files, established prefix and `DESTDIR` installation, rebuilt C and Rust from a 64-file working-tree snapshot with prepared external dependencies, and provided a root test entry point. Slice 004 was formally accepted for the evaluated Linux x86-64 environment and identified dependencies. Binary reproducibility, a complete build from the present `HEAD`, self-contained distribution and other platforms are not established. Sources and outstanding work: `CHARACTERIZATION.md`, `BENCHMARKING.md`, `INSTALL.md` and `ROADMAP.md`.
+An audit characterized the build and installation limitations. Subsequent work connected externally supplied TEA 3.13 files, established prefix and `DESTDIR` installation, rebuilt C and Rust from a 64-file working-tree snapshot with prepared external dependencies, and provided a root test entry point. Slice 004 was formally accepted for the evaluated Linux x86-64 environment and identified dependencies. Binary reproducibility, a complete build from the then-current `HEAD`, self-contained distribution and other platforms are not established. Sources and outstanding work: `CHARACTERIZATION.md`, `BENCHMARKING.md`, `INSTALL.md` and `ROADMAP.md`.
+
+## Slice 005
+
+A source audit preceded the selective incorporation of the accepted implementation, tests and documentation into development baseline commit `338dacbd3a68a19374e7ab2775ddf87055b15d4b`. The commit was rebuilt and tested from a Git archive using identified external dependencies. Merge `b610fec` reconciled the histories without changing the baseline tree, and development publication was recorded. Slice 005 was formally accepted within these documented limits; it is not a stable release. Sources: `CHARACTERIZATION.md`, `CHANGELOG.md` and `ROADMAP.md`.

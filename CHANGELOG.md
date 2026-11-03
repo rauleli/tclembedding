@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Slice 005 — source integrity, Git baseline and development publication
+
+* Formally accepted the source audit, selective Git baseline and development publication. The source inventory and verified private working-tree backup preceded commit `338dacbd3a68a19374e7ab2775ddf87055b15d4b`. That commit was rebuilt from a Git archive, installed in an isolated prefix and passed package loading and `make test` with identified fixtures. The ingestion example's password diagnostics were corrected as part of the baseline.
+* Merge `b610fec` reconciled local and remote histories without changing the baseline tree; the development branch was published. This is not a stable release or evidence of binary reproducibility, self-contained dependency distribution, general model support, concurrency or other-platform compatibility. See `CHARACTERIZATION.md` and `ROADMAP.md` for evidence and open work.
+
 ### Development baseline preparation
 
 * The ingestion example no longer prints the configured password in connection troubleshooting, and redacts it from caught error diagnostics. A synthetic failing-connection check verified that the password is not echoed; no database connection was made.
@@ -17,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Slice 004 — build, installation and test infrastructure
 
 * Formally accepted 004-A and 004-B1 through 004-B3 within the evaluated Linux x86-64 environment and identified, previously available dependencies. The evidence and commands remain in `CHARACTERIZATION.md`, `BENCHMARKING.md` and `INSTALL.md`.
-* Acceptance covers the tested TEA configuration, isolated prefix and `DESTDIR` installation, 64-file working-tree source snapshot build, installed package loading, and full and subset test entry points. It does not establish bit-identical builds, a complete build from the current `HEAD`, self-contained distribution or other-platform compatibility. Source version control, dependency distribution, binary and debug-symbol review, packaging and publication requirements remain open.
+* Acceptance covers the tested TEA configuration, isolated prefix and `DESTDIR` installation, 64-file working-tree source snapshot build, installed package loading, and full and subset test entry points. It does not establish bit-identical builds, a complete build from the then-current `HEAD`, self-contained distribution or other-platform compatibility. At that stage source version control, dependency distribution, binary and debug-symbol review, packaging and publication requirements remained open; the subsequent source baseline and development publication are recorded above.
 
 ### Slice 004-B3 — test entry point
 

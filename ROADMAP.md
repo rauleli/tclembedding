@@ -16,11 +16,15 @@ This map identifies dependencies and possible work; it does not authorize new sl
 
 ## Slice 004 — build, installation and test infrastructure
 
-**Formally accepted**, including 004-A and 004-B1 through 004-B3, for the evaluated Linux x86-64 environment and the identified, previously available external dependencies. The evidence covers TEA configuration, prefix and `DESTDIR` installation, a working-tree source snapshot build and the root test entry point; see `CHARACTERIZATION.md` and `INSTALL.md`. Acceptance does not establish bit reproducibility, a complete build from the current `HEAD`, self-contained distribution or compatibility with other platforms. It does not authorize publication or subsequent work.
+**Formally accepted**, including 004-A and 004-B1 through 004-B3, for the evaluated Linux x86-64 environment and the identified, previously available external dependencies. The evidence covers TEA configuration, prefix and `DESTDIR` installation, a working-tree source snapshot build and the root test entry point; see `CHARACTERIZATION.md` and `INSTALL.md`. Acceptance does not establish bit reproducibility, a complete build from the then-current `HEAD`, self-contained distribution or compatibility with other platforms. At the time, it did not authorize publication or subsequent work.
+
+## Slice 005 — source integrity, Git baseline and development publication
+
+**Formally accepted**, including the source audit, local Git baseline and development publication. Commit `338dacbd3a68a19374e7ab2775ddf87055b15d4b` was rebuilt and tested from a Git archive with identified external dependencies; merge `b610fec` reconciled the histories without changing that baseline tree. Development publication is recorded; see `CHARACTERIZATION.md`. Acceptance is not a stable release and does not establish self-contained distribution, binary reproducibility, general model compatibility, concurrency or portability. It does not authorize subsequent work.
 
 ## Further work to evaluate
 
-Before publication, the required source files must be properly incorporated into version control; TEA, crate sources and ONNX Runtime acquisition and distribution need decisions; binary paths and debugging-symbol policy need review; and packaging, publication requirements and other distributions, macOS and ARM64 need separate characterization. These remain open. Existing concurrency, model compatibility and memory questions also remain open. See `INSTALL.md` and `CHARACTERIZATION.md`.
+For stable distribution and future publication, TEA, crate sources and ONNX Runtime acquisition and distribution need decisions; binary paths and debugging-symbol policy need review; and packaging, publication requirements and other distributions, macOS and ARM64 need separate characterization. These remain open. Existing concurrency, model compatibility and memory questions also remain open. See `INSTALL.md` and `CHARACTERIZATION.md`.
 
 | Topic | Evidence or decision needed |
 | --- | --- |
