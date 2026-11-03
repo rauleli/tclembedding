@@ -36,6 +36,10 @@ The model's default `SentenceTransformer.encode()` output is not L2-normalized; 
 
 **Status: implemented and formally accepted within the tested scope of Slice 007.** `embedding::compute handle token_ids ?-pooling mean|cls?` preserves mean pooling by default. The caller explicitly selects first-token pooling when required; no model-name heuristics, automatic prefixes or automatic truncation are introduced. L2 normalization remains unchanged. Session initialization validates the required rank-2 int64 `input_ids` and `attention_mask`, permits `token_type_ids` only when declared, and rejects additional or incompatible inputs. The actual float32 output must have shape `[1, token_count, hidden_dimension]`, with safe allocation and element-count checks. A dynamic dimension does not establish compatibility with arbitrary graphs. See `CHARACTERIZATION.md` for model-specific evidence and the limits of the PyTorch comparisons.
 
+## D-007 — Explicit batch inputs and attention masks
+
+**Status: implemented and formally accepted within the tested scope of Slice 008.** `embedding::compute_batch handle token_id_lists -pad-id integer ?-pooling mean|cls?` is additive. The caller must choose the padding ID; the binding does not infer it from the tokenizer or ONNX. Right-padding creates a length-based attention mask and mean pooling excludes masked positions. CLS and L2 apply per sequence. The existing single-sequence command is unchanged. Batch and output bounds are revisable binding policies detailed in `README.md`; graphs with unknown declared hidden dimensions are rejected by the batch API before inference. The single-sequence API validates the effective output dimension and does not have that static-metadata restriction. The tested model-specific padding IDs and their limitations are recorded in `CHARACTERIZATION.md`. This does not claim support for arbitrary models, padding policies or general concurrency.
+
 ## Open decisions
 
 | Question | Status |

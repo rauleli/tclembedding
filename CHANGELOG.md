@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Slice 008 — batch inference (formally accepted)
+
+- Add `embedding::compute_batch` with explicit padding ID, right-padding, attention masks, per-sequence mean or CLS pooling and L2. Preserve the existing single-sequence API.
+- Bound batch dimensions and validate input IDs, ONNX metadata, output tensors and numeric results. Add reproducible synthetic tests and a separate ONNX C comparison client. A focused review found that ONNX Runtime could return a hidden dimension inconsistent with declared metadata; the batch path now rejects the mismatch and enforces actual output bounds before pooling. Synthetic tests cover that case and three padded rows.
+- Compare four identified ONNX models with individual inference and matching independent ONNX and previously captured PyTorch references; see `CHARACTERIZATION.md` for tested cases and limitations. Slice 008 is formally accepted only for the characterized models, revisions, inputs and environments; general batching, padding, memory safety, concurrency, portability and performance remain unestablished.
+
 ### Slice 007 — four-model ONNX compatibility (formally accepted)
 
 - Validate the required two-input encoder signature and the optional third token-type input before publishing a handle; reject unsupported inputs and incompatible metadata with controlled errors.

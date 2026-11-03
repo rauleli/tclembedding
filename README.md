@@ -111,6 +111,21 @@ Incompatible ONNX output tensors and zero or non-finite embedding norms return e
 - L2 normalization; no automatic pooling selection, truncation or input prefixes.
 - Input signatures with the required rank-2 int64 `input_ids` and `attention_mask`, and optional `token_type_ids`, are validated at initialization. Additional inputs are rejected.
 
+#### embedding::compute_batch *handle* *token_id_lists* -pad-id *integer* ?-pooling mean|cls?
+
+Computes one L2-normalized embedding per nonempty sequence, preserving input order. The caller must supply a nonnegative signed 64-bit padding ID; the binding does not infer it from the tokenizer or the ONNX model. Sequences are padded on the right to the longest sequence; the attention mask is one for supplied positions and zero for padding. Mean pooling excludes padding; CLS pooling selects the first token of each sequence. The default pooling is mean. `token_type_ids` are zeros only when the model declares that input. No tokenizer batching, truncation or model-specific prefix is applied.
+
+For bounded execution, this API accepts at most 256 sequences, 512 IDs per sequence and 4,096 padded input positions. It requires a positive, statically declared ONNX output hidden dimension no greater than 8,192 and at most 16,777,216 output elements. These are revisable binding resource policies, not model vocabulary or context limits; ONNX Runtime may allocate additional internal memory. Unsupported metadata, fixed batch or sequence mismatches, invalid IDs, empty sequences, non-finite output and invalid norms return Tcl errors. The model must support the requested batch, and callers must supply IDs appropriate to its vocabulary.
+
+```tcl
+set vectors [embedding::compute_batch $handle [list $ids1 $ids2] -pad-id $pad_id]
+set cls_vectors [embedding::compute_batch $handle [list $ids1 $ids2] -pad-id $pad_id -pooling cls]
+```
+
+The evaluated padding IDs were MiniLM 1, BGE 0, E5 1 and MPNet 1. For the identified MiniLM revision, the tokenizer uses ID 1 for `<pad>` while the model configuration declares `pad_token_id` 0; ID 1 was used in the reported tests. It is not established that a different ID is always immaterial or that 0 is incorrect. An inconsistent ID can cause errors or change semantics, so selecting it is the caller's responsibility.
+
+Batch support is characterized for the four identified model revisions in `CHARACTERIZATION.md`, not arbitrary ONNX graphs. Fixed batch sizes other than one are currently rejected when creating a handle. `embedding::compute` retains its existing behavior and validates the effective output dimension at runtime; it does not impose the batch path's static-hidden-dimension restriction.
+
 #### embedding::free *handle*
 
 Releases the model resources and deletes the handle command. Repeated free, a freed handle or a foreign command produces an error. Renaming the handle preserves its identity; deleting it with `rename $handle {}` or destroying its interpreter also releases the resources.
@@ -153,7 +168,7 @@ The characterized model is `sentence-transformers/paraphrase-multilingual-MiniLM
 set tokens [tokenizer::tokenize $text -max-length 128]
 ```
 
-`embedding::compute` always applies L2 normalization; there is currently no public option to disable it. Thus its output should be compared with a separately normalized Sentence Transformers embedding, using equivalent IDs and attention masks. Different truncation or normalization settings can change vectors even when the numeric calculation is correct. The comparison covered batch size one without actual padding; real padding, concurrent use and universal model compatibility are not established. Other ONNX configurations have separate, limited evidence in `CHARACTERIZATION.md`. Slice 003 acceptance is limited to the evaluated model, revision, environments, configurations and cases; see `CHARACTERIZATION.md` for measured errors and limits.
+`embedding::compute` always applies L2 normalization; there is currently no public option to disable it. Thus its output should be compared with a separately normalized Sentence Transformers embedding, using equivalent IDs and attention masks. Different truncation or normalization settings can change vectors even when the numeric calculation is correct. The comparison covered batch size one without actual padding; general concurrent use and universal model compatibility are not established; right-padding in the batch API has separate, limited evidence. Other ONNX configurations have separate, limited evidence in `CHARACTERIZATION.md`. Slice 003 acceptance is limited to the evaluated model, revision, environments, configurations and cases; see `CHARACTERIZATION.md` for measured errors and limits.
 
 ## Model Files
 

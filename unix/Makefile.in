@@ -91,7 +91,7 @@ test:
 	@test -n "$(TOKENIZER_JSON)" -a -r "$(TOKENIZER_JSON)" || { echo "Set TOKENIZER_JSON to a readable tokenizer fixture" >&2; exit 1; }
 	@test -n "$(MODEL_ONNX)" -a -r "$(MODEL_ONNX)" || { echo "Set MODEL_ONNX to a readable ONNX model fixture" >&2; exit 1; }
 	@test -n "$(SAFETY_FIXTURES)" -a -d "$(SAFETY_FIXTURES)" || { echo "Set SAFETY_FIXTURES to the synthetic fixture directory" >&2; exit 1; }
-	$(MAKE) test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety
+	$(MAKE) test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety test-embedding-batch
 
 test-tokenizer: tcltokenizer.so pkgIndex.tcl
 	@test -n "$(TOKENIZER_JSON)" || { echo "Set TOKENIZER_JSON to the test fixture"; exit 1; }
@@ -120,6 +120,10 @@ test-embedding-safety: $(SHARED_LIB) pkgIndex.tcl
 	@test -n "$(SAFETY_FIXTURES)" || { echo "Set SAFETY_FIXTURES to the generated fixture directory"; exit 1; }
 	TCLLIBPATH="$(CURDIR)" $(TCLSH_PROG) $(srcdir)/../tests/embedding_safety_test.tcl "$(SAFETY_FIXTURES)"
 
+test-embedding-batch: $(SHARED_LIB) pkgIndex.tcl
+	@test -n "$(SAFETY_FIXTURES)" || { echo "Set SAFETY_FIXTURES to the generated fixture directory"; exit 1; }
+	TCLLIBPATH="$(CURDIR)" $(TCLSH_PROG) $(srcdir)/../tests/embedding_batch_test.tcl "$(SAFETY_FIXTURES)"
+
 # Clean targets
 clean:
 	rm -f $(OBJECTS) $(SHARED_LIB) tokenizer_bridge.o tcltokenizer.so libtclembedding_tokenizer.so tokenizer_abi_test pkgIndex.tcl
@@ -128,4 +132,4 @@ distclean: clean
 	rm -f Makefile
 
 # Phony targets
-.PHONY: all install install-lib print-install-dir test test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety clean distclean
+.PHONY: all install install-lib print-install-dir test test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety test-embedding-batch clean distclean

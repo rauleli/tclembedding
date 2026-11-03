@@ -46,3 +46,8 @@ Autonomous retrieval, its consumers and any later integration need their own con
 ### Slice 007 — four-model encoder characterization
 
 007-A characterized four identified ONNX models. 007-B implements validated two-/three-input encoder signatures, dynamic hidden dimensions and explicit mean/CLS pooling; the implementation is **formally accepted** within the identified models, revisions, configurations, cases and environments. Independent PyTorch/Sentence Transformers vectors were subsequently compared directly with the binding for the identified BGE, E5 and MPNet cases; see `CHARACTERIZATION.md` for scope and limits. General padding, batching, concurrency, portability and compatibility with untested models remain outside the demonstrated scope.
+
+
+### Slice 008 — batch inference and attention masking
+
+The additive batch API and its bounded right-padding and pooling behavior are formally accepted within the identified models, revisions, inputs and environments. Evidence and resource limits are in `CHARACTERIZATION.md` and `README.md`. General arbitrary masks, other input signatures, fixed batch sizes above one, dynamic hidden-size metadata, broader memory failure injection, concurrency and portability remain outside the tested scope.

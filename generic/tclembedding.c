@@ -26,6 +26,7 @@ typedef struct {
     OrtEnv* env;
     int has_type_ids;
     int64_t fixed_sequence;
+    int64_t fixed_batch;
     Tcl_Interp *interp;
     Tcl_Command command;
 } EmbeddingState;
@@ -79,7 +80,7 @@ static int ValidateInputs(Tcl_Interp *interp, EmbeddingState *state) {
     char *name = NULL;
     size_t count = 0;
     int seen = 0, result = TCL_ERROR;
-    int64_t fixed = 0;
+    int64_t fixed = 0, fixed_batch = 0;
 #define INPUT_CALL(expr) do { st = (expr); if (st) { \
     Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); \
     g_ort->ReleaseStatus(st); goto done; } } while (0)
@@ -119,12 +120,14 @@ static int ValidateInputs(Tcl_Interp *interp, EmbeddingState *state) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj("incompatible ONNX input shape", -1)); goto done;
         }
         if (dims[1] > 0) fixed = dims[1];
+        if (dims[0] == 1) fixed_batch = 1;
         g_ort->ReleaseTypeInfo(type); type = NULL;
         allocator->Free(allocator, name); name = NULL;
     }
     if ((seen & 3) != 3) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX model is missing required inputs", -1)); goto done; }
     state->has_type_ids = (seen & 4) != 0;
     state->fixed_sequence = fixed;
+    state->fixed_batch = fixed_batch;
     result = TCL_OK;
 done:
     if (type) g_ort->ReleaseTypeInfo(type);
@@ -411,6 +414,228 @@ cleanup:
     return result;
 }
 
+/* Batch size and padded tensor elements are deliberately bounded before allocation. */
+#define EMBEDDING_BATCH_MAX 256
+#define EMBEDDING_BATCH_ELEMENTS_MAX 4096
+#define EMBEDDING_BATCH_SEQUENCE_MAX 512
+#define EMBEDDING_BATCH_OUTPUT_MAX 16777216
+
+static int BatchId(Tcl_Interp *interp, Tcl_Obj *obj, int64_t *out) {
+    mp_int exact;
+    if (Tcl_GetBignumFromObj(interp, obj, &exact) != TCL_OK) return TCL_ERROR;
+    int invalid = mp_isneg(&exact) || mp_count_bits(&exact) > 63;
+    mp_clear(&exact);
+    Tcl_WideInt value;
+    if (invalid) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("IDs must be nonnegative signed 64-bit integers", -1));
+        return TCL_ERROR;
+    }
+    if (Tcl_GetWideIntFromObj(interp, obj, &value) != TCL_OK) return TCL_ERROR;
+    if (value < 0 || value > (Tcl_WideInt)INT64_MAX) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("IDs must be nonnegative signed 64-bit integers", -1));
+        return TCL_ERROR;
+    }
+    *out = (int64_t)value;
+    return TCL_OK;
+}
+
+/* Bound the output tensor from its declared hidden size before running ONNX. */
+static int BatchOutputBound(Tcl_Interp *interp, EmbeddingState *state, size_t count, int batch, int length, int64_t *declared_hidden) {
+    OrtStatus *st = NULL;
+    OrtAllocator *allocator = NULL;
+    OrtTypeInfo *type = NULL;
+    char *name = NULL;
+    size_t n = 0;
+    int result = TCL_ERROR;
+#define OUTPUT_CALL(expr) do { st = (expr); if (st) { \
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); \
+    g_ort->ReleaseStatus(st); goto output_done; } } while (0)
+    OUTPUT_CALL(g_ort->GetAllocatorWithDefaultOptions(&allocator));
+    OUTPUT_CALL(g_ort->SessionGetOutputCount(state->session, &n));
+    for (size_t i = 0; i < n; i++) {
+        OUTPUT_CALL(g_ort->SessionGetOutputName(state->session, i, allocator, &name));
+        if (name && strcmp(name, "last_hidden_state") == 0) {
+            const OrtTensorTypeAndShapeInfo *shape = NULL;
+            ONNXType kind; ONNXTensorElementDataType element; size_t rank; int64_t dims[3];
+            OUTPUT_CALL(g_ort->SessionGetOutputTypeInfo(state->session, i, &type));
+            OUTPUT_CALL(g_ort->GetOnnxTypeFromTypeInfo(type, &kind));
+            if (kind != ONNX_TYPE_TENSOR) break;
+            OUTPUT_CALL(g_ort->CastTypeInfoToTensorInfo(type, &shape));
+            if (!shape) break;
+            OUTPUT_CALL(g_ort->GetTensorElementType(shape, &element));
+            OUTPUT_CALL(g_ort->GetDimensionsCount(shape, &rank));
+            if (element != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || rank != 3) break;
+            OUTPUT_CALL(g_ort->GetDimensions(shape, dims, 3));
+            if ((dims[0] != -1 && dims[0] != batch) || (dims[1] != -1 && dims[1] != length) ||
+                dims[2] <= 0 || dims[2] > 8192 || (uint64_t)dims[2] > EMBEDDING_BATCH_OUTPUT_MAX / count) break;
+            *declared_hidden = dims[2];
+            result = TCL_OK; break;
+        }
+        if (name) { allocator->Free(allocator, name); name = NULL; }
+    }
+    if (result != TCL_OK) Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX batch output metadata is incompatible or exceeds limits", -1));
+output_done:
+    if (type) g_ort->ReleaseTypeInfo(type);
+    if (name && allocator) allocator->Free(allocator, name);
+#undef OUTPUT_CALL
+    return result;
+}
+
+static int TclEmbedding_ComputeBatch_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+    (void)cd;
+    if (objc != 5 && objc != 7) {
+        Tcl_WrongNumArgs(interp, 1, objv, "handle token_id_lists -pad-id integer ?-pooling mean|cls?");
+        return TCL_ERROR;
+    }
+    EmbeddingState *state = GetEmbeddingState(interp, objv[1]);
+    if (!state) return TCL_ERROR;
+    if (strcmp(Tcl_GetString(objv[3]), "-pad-id") != 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("expected -pad-id integer", -1)); return TCL_ERROR;
+    }
+    int64_t pad;
+    if (BatchId(interp, objv[4], &pad) != TCL_OK) return TCL_ERROR;
+    int cls = 0;
+    if (objc == 7) {
+        const char *mode = Tcl_GetString(objv[6]);
+        if (strcmp(Tcl_GetString(objv[5]), "-pooling") != 0 ||
+            (strcmp(mode, "mean") != 0 && strcmp(mode, "cls") != 0)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("expected -pooling mean or cls", -1)); return TCL_ERROR;
+        }
+        cls = strcmp(mode, "cls") == 0;
+    }
+    int batch_count;
+    Tcl_Obj **sequences;
+    if (Tcl_ListObjGetElements(interp, objv[2], &batch_count, &sequences) != TCL_OK) return TCL_ERROR;
+    if (batch_count <= 0 || batch_count > EMBEDDING_BATCH_MAX) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("batch must contain between 1 and 256 sequences", -1)); return TCL_ERROR;
+    }
+    if (state->fixed_batch && state->fixed_batch != batch_count) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("batch size does not match fixed ONNX input batch", -1)); return TCL_ERROR;
+    }
+    int max_len = 0;
+    for (int b = 0; b < batch_count; b++) {
+        int length; Tcl_Obj **items;
+        if (Tcl_ListObjGetElements(interp, sequences[b], &length, &items) != TCL_OK) return TCL_ERROR;
+        if (!length) { Tcl_SetObjResult(interp, Tcl_NewStringObj("token ID sequences must not be empty", -1)); return TCL_ERROR; }
+        if (length > EMBEDDING_BATCH_SEQUENCE_MAX) { Tcl_SetObjResult(interp, Tcl_NewStringObj("sequence exceeds the batch input limit of 512 tokens", -1)); return TCL_ERROR; }
+        if (length > max_len) max_len = length;
+        if ((size_t)max_len > EMBEDDING_BATCH_ELEMENTS_MAX / (size_t)batch_count) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("padded batch exceeds the input element limit", -1)); return TCL_ERROR;
+        }
+        for (int t = 0; t < length; t++) { int64_t ignored; if (BatchId(interp, items[t], &ignored) != TCL_OK) return TCL_ERROR; }
+    }
+    if (state->fixed_sequence && state->fixed_sequence != max_len) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("padded length does not match fixed ONNX input sequence", -1)); return TCL_ERROR;
+    }
+    size_t count = (size_t)batch_count * (size_t)max_len;
+    if (count > SIZE_MAX / sizeof(int64_t)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("padded batch size overflow", -1)); return TCL_ERROR;
+    }
+    int64_t declared_hidden = 0;
+    if (BatchOutputBound(interp, state, count, batch_count, max_len, &declared_hidden) != TCL_OK) return TCL_ERROR;
+    size_t bytes = count * sizeof(int64_t);
+    int64_t *ids = calloc(count, sizeof(*ids)), *mask = calloc(count, sizeof(*mask));
+    int64_t *types = state->has_type_ids ? calloc(count, sizeof(*types)) : NULL;
+    OrtMemoryInfo *memory = NULL;
+    OrtValue *input[3] = {NULL, NULL, NULL}, *output = NULL;
+    OrtTensorTypeAndShapeInfo *shape = NULL;
+    Tcl_Obj *result_list = NULL;
+    double *pooled = NULL;
+    int result = TCL_ERROR;
+    OrtStatus *st;
+#define BATCH_CALL(expr) do { st = (expr); if (st) { \
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); \
+    g_ort->ReleaseStatus(st); goto batch_cleanup; } } while (0)
+    if (!ids || !mask || (state->has_type_ids && !types)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("unable to allocate batch inputs", -1)); goto batch_cleanup;
+    }
+    for (int b = 0; b < batch_count; b++) {
+        int length; Tcl_Obj **items;
+        if (Tcl_ListObjGetElements(interp, sequences[b], &length, &items) != TCL_OK) goto batch_cleanup;
+        for (int t = 0; t < max_len; t++) {
+            size_t offset = (size_t)b * (size_t)max_len + (size_t)t;
+            if (t < length) {
+                if (BatchId(interp, items[t], &ids[offset]) != TCL_OK) goto batch_cleanup;
+                mask[offset] = 1;
+            } else ids[offset] = pad;
+        }
+    }
+    int64_t input_dims[2] = {batch_count, max_len};
+    BATCH_CALL(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory));
+    BATCH_CALL(g_ort->CreateTensorWithDataAsOrtValue(memory, ids, bytes, input_dims, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &input[0]));
+    BATCH_CALL(g_ort->CreateTensorWithDataAsOrtValue(memory, mask, bytes, input_dims, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &input[1]));
+    if (state->has_type_ids) BATCH_CALL(g_ort->CreateTensorWithDataAsOrtValue(memory, types, bytes, input_dims, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &input[2]));
+    const char *input_names[] = {"input_ids", "attention_mask", "token_type_ids"};
+    const char *output_names[] = {"last_hidden_state"};
+    BATCH_CALL(g_ort->Run(state->session, NULL, input_names, (const OrtValue *const *)input,
+                          state->has_type_ids ? 3 : 2, output_names, 1, &output));
+    if (!output) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX returned no output", -1)); goto batch_cleanup; }
+    int is_tensor = 0;
+    BATCH_CALL(g_ort->IsTensor(output, &is_tensor));
+    if (!is_tensor) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output is not a tensor", -1)); goto batch_cleanup; }
+    BATCH_CALL(g_ort->GetTensorTypeAndShape(output, &shape));
+    ONNXTensorElementDataType element; size_t rank, elements; int64_t dims[3];
+    BATCH_CALL(g_ort->GetTensorElementType(shape, &element));
+    BATCH_CALL(g_ort->GetDimensionsCount(shape, &rank));
+    if (element != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || rank != 3) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output must be a rank-3 float32 tensor", -1)); goto batch_cleanup;
+    }
+    BATCH_CALL(g_ort->GetDimensions(shape, dims, 3));
+    if (dims[0] != batch_count || dims[1] != max_len || dims[2] != declared_hidden ||
+        dims[2] <= 0 || dims[2] > 8192 || (uint64_t)dims[2] > EMBEDDING_BATCH_OUTPUT_MAX / count ||
+        (uint64_t)dims[2] > SIZE_MAX / sizeof(double) || (uint64_t)dims[2] > SIZE_MAX / count ||
+        count * (size_t)dims[2] > SIZE_MAX / sizeof(float)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output must have a safe shape [batch, sequence, hidden]", -1)); goto batch_cleanup;
+    }
+    size_t dim = (size_t)dims[2];
+    BATCH_CALL(g_ort->GetTensorShapeElementCount(shape, &elements));
+    if (elements != count * dim) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output element count is inconsistent", -1)); goto batch_cleanup; }
+    float *data = NULL;
+    BATCH_CALL(g_ort->GetTensorMutableData(output, (void **)&data));
+    if (!data) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output tensor has no data", -1)); goto batch_cleanup; }
+    pooled = calloc(dim, sizeof(*pooled));
+    if (!pooled) { Tcl_SetObjResult(interp, Tcl_NewStringObj("unable to allocate pooled vector", -1)); goto batch_cleanup; }
+    result_list = Tcl_NewListObj(0, NULL); Tcl_IncrRefCount(result_list);
+    for (int b = 0; b < batch_count; b++) {
+        memset(pooled, 0, dim * sizeof(*pooled));
+        size_t valid = 0;
+        for (int t = 0; t < max_len; t++) {
+            size_t offset = (size_t)b * (size_t)max_len + (size_t)t;
+            if (mask[offset]) valid++;
+            for (size_t i = 0; i < dim; i++) {
+                float value = data[offset * dim + i];
+                if (!isfinite(value)) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output contains non-finite values", -1)); goto batch_cleanup; }
+                if (mask[offset] && (!cls || t == 0)) pooled[i] += value;
+            }
+        }
+        double norm = 0.0;
+        for (size_t i = 0; i < dim; i++) { pooled[i] /= cls ? 1 : valid; norm += pooled[i] * pooled[i]; }
+        norm = sqrt(norm);
+        if (!isfinite(norm) || norm == 0.0) { Tcl_SetObjResult(interp, Tcl_NewStringObj("embedding norm is zero or non-finite", -1)); goto batch_cleanup; }
+        if (norm < 1e-9) norm = 1e-9;
+        Tcl_Obj *vec = Tcl_NewListObj(0, NULL); Tcl_IncrRefCount(vec);
+        for (size_t i = 0; i < dim; i++) {
+            if (Tcl_ListObjAppendElement(interp, vec, Tcl_NewDoubleObj(pooled[i] / norm)) != TCL_OK) {
+                Tcl_DecrRefCount(vec); goto batch_cleanup;
+            }
+        }
+        if (Tcl_ListObjAppendElement(interp, result_list, vec) != TCL_OK) { Tcl_DecrRefCount(vec); goto batch_cleanup; }
+        Tcl_DecrRefCount(vec);
+    }
+    Tcl_SetObjResult(interp, result_list);
+    result = TCL_OK;
+batch_cleanup:
+    if (result_list) Tcl_DecrRefCount(result_list);
+    free(pooled);
+    if (shape) g_ort->ReleaseTensorTypeAndShapeInfo(shape);
+    if (output) g_ort->ReleaseValue(output);
+    for (int i = 0; i < 3; i++) if (input[i]) g_ort->ReleaseValue(input[i]);
+    if (memory) g_ort->ReleaseMemoryInfo(memory);
+    free(ids); free(mask); free(types);
+#undef BATCH_CALL
+    return result;
+}
+
 static int TclEmbedding_Free_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
     (void)cd;
     if (objc != 2) {
@@ -430,6 +655,7 @@ int Tclembedding_Init(Tcl_Interp *interp) {
     if (Tcl_InitStubs(interp, "8.6", 0) == NULL) return TCL_ERROR;
     Tcl_CreateObjCommand(interp, "embedding::init_raw", TclEmbedding_Init_Cmd, NULL, NULL);
     Tcl_CreateObjCommand(interp, "embedding::compute", TclEmbedding_Compute_Cmd, NULL, NULL);
+    Tcl_CreateObjCommand(interp, "embedding::compute_batch", TclEmbedding_ComputeBatch_Cmd, NULL, NULL);
     Tcl_CreateObjCommand(interp, "embedding::free", TclEmbedding_Free_Cmd, NULL, NULL);
     return Tcl_PkgProvide(interp, "tclembedding", "1.0");
 }

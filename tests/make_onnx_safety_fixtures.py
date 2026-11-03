@@ -56,6 +56,7 @@ fixtures = {
     "sequence.onnx": ([1, 1, 384], 1, 1.0),
     "hidden.onnx": ([1, 2, 3], 1, 1.0),
     "type.onnx": ([1, 2, 384], 7, 1),
+    "large-hidden.onnx": ([1, 2, 8193], 1, 1.0),
 }
 for name, (dims, element, value) in fixtures.items():
     size = 1
@@ -85,3 +86,51 @@ write_extra("input-type.onnx", [inp("input_ids", 1), inp("attention_mask")])
 write_extra("input-rank.onnx", [inp("input_ids", 7, [1, 2, 3]), inp("attention_mask")])
 write_extra("input-batch.onnx", [inp("input_ids", 7, [2, "sequence"]), inp("attention_mask")])
 write_extra("fixed-input.onnx", [inp("input_ids", 7, [1, 2]), inp("attention_mask", 7, [1, 2])])
+
+# Dynamic batch fixture encodes input IDs and the attention mask in its output.
+def attr_int(name, value):
+    return string(1, name) + integer(3, value) + integer(20, 2)
+
+def attr_axes(name, values):
+    return string(1, name) + b''.join(integer(8, v) for v in values) + integer(20, 7)
+
+def operation(op, inputs, output, attributes=()):
+    return b''.join(string(1, v) for v in inputs) + string(2, output) + string(4, op) + b''.join(data(5, a) for a in attributes)
+
+def batch_model(include_types):
+    nodes = [operation('Cast', ['input_ids'], 'float_ids', [attr_int('to', 1)]),
+             operation('Cast', ['attention_mask'], 'float_mask', [attr_int('to', 1)]),
+             operation('Unsqueeze', ['float_ids'], 'ids3', [attr_axes('axes', [2])]),
+             operation('Unsqueeze', ['float_mask'], 'mask3', [attr_axes('axes', [2])]),
+             operation('Concat', ['ids3', 'mask3'], 'last_hidden_state', [attr_int('axis', 2)])]
+    graph = b''.join(data(1, node) for node in nodes) + string(2, 'synthetic_dynamic_batch')
+    for name in ['input_ids', 'attention_mask'] + (['token_type_ids'] if include_types else []):
+        graph += data(11, value_info(name, 7, ['batch', 'sequence']))
+    graph += data(12, value_info('last_hidden_state', 1, ['batch', 'sequence', 2]))
+    return integer(1, 8) + string(2, 'synthetic') + data(7, graph) + data(8, integer(2, 11))
+
+for name, include_types in [('batch-two-inputs.onnx', False), ('batch-three-inputs.onnx', True)]:
+    with (root / name).open('xb') as output:
+        output.write(batch_model(include_types))
+
+# The declared output size is deliberately false; the actual size depends on inputs.
+def shape_mismatch_model(hidden):
+    def constant(name, element, raw, dims):
+        tensor = b''.join(integer(1, dim) for dim in dims) + integer(2, element) + data(9, raw)
+        attribute = string(1, 'value') + data(5, tensor) + integer(20, 4)
+        return operation('Constant', [], name, [attribute])
+    nodes = [operation('Shape', ['input_ids'], 'input_shape'),
+             constant('hidden_size', 7, struct.pack('<q', hidden), [1]),
+             operation('Concat', ['input_shape', 'hidden_size'], 'output_shape', [attr_int('axis', 0)]),
+             operation('ConstantOfShape', ['output_shape'], 'zero'),
+             constant('one', 1, struct.pack('<f', 1), []),
+             operation('Add', ['zero', 'one'], 'last_hidden_state')]
+    graph = b''.join(data(1, node) for node in nodes) + string(2, 'synthetic_output_mismatch')
+    for name in ('input_ids', 'attention_mask'):
+        graph += data(11, value_info(name, 7, [1, 'sequence']))
+    graph += data(12, value_info('last_hidden_state', 1, [1, 'sequence', 2]))
+    return integer(1, 8) + string(2, 'synthetic') + data(7, graph) + data(8, integer(2, 11))
+
+for name, hidden in [('output-mismatch-small.onnx', 3), ('output-mismatch-large.onnx', 8193)]:
+    with (root / name).open('xb') as output:
+        output.write(shape_mismatch_model(hidden))

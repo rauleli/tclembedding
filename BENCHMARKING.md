@@ -264,3 +264,35 @@ The numerical regression used the 18-case serialized Tcl output and the previous
 ## Slice 007-B exploratory four-model measurements
 
 The four-model measurements used one process per model on Linux x86-64, ONNX Runtime C 1.20.1 with one inference thread, one warmup and five timed calls per short synthetic text. MiniLM used explicit 128-token truncation, BGE used CLS and the other models used mean; L2 remained enabled. Session-load times were 1822.629, 547.872, 1759.996 and 1668.512 ms for MiniLM, BGE, E5 and MPNet respectively. Short-case median inference times were 26.120, 40.530, 40.558 and 154.255 ms; process peak RSS was 1235968, 263180, 1214548 and 817644 KiB respectively. These are single-process observations, include differing tokenizer and model memory, and do not establish general performance or memory safety. CPU frequency and operating-system caches were uncontrolled.
+
+
+## Slice 008 — exploratory batch measurements
+
+In one process per condition on an AMD Phenom II X4 965, Linux x86-64, with ONNX Runtime C 1.20.1 and one inference thread, each measurement used one warmup and the median of three timed calls, two sequences per batch. CPU frequency and OS caches were not controlled. Equal-length cases repeated the same synthetic sequence; unequal cases used shorter and longer sequences. E5 used explicit query and passage prefixes. The values include inference and Tcl result construction, not model load; RSS is the process peak including the loaded model. They are observations, not general performance guarantees. These timings preceded the subsequent actual-output-shape guard described in `CHARACTERIZATION.md`; the guard was not separately benchmarked.
+
+| Model | Lengths | Individual total ms | Batch total ms | Individual seq/s | Batch seq/s | Individual/batch peak RSS KiB |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| MiniLM | 11, 11 | 92.614 | 73.199 | 21.60 | 27.32 | 888448 / 888256 |
+| MiniLM | 11, 2 | 66.919 | 73.298 | 29.89 | 27.29 | 888444 / 888320 |
+| BGE | 13, 13 | 102.493 | 83.513 | 19.51 | 23.95 | 253968 / 254260 |
+| BGE | 13, 2 | 70.023 | 83.488 | 28.56 | 23.96 | 254064 / 253972 |
+| E5 | 11, 11 | 91.327 | 72.775 | 21.90 | 27.48 | 885232 / 885276 |
+| E5 | 11, 9 | 86.462 | 73.131 | 23.13 | 27.35 | 885236 / 885528 |
+| MPNet | 13, 13 | 385.287 | 313.055 | 5.19 | 6.39 | 806912 / 807036 |
+| MPNet | 13, 2 | 267.220 | 312.076 | 7.48 | 6.41 | 806920 / 807052 |
+
+Per-sequence latency is half the total in these two-sequence tests. Unequal batches process `2 * max(length)` padded positions: 22 versus 13 actual for MiniLM, 26 versus 15 for BGE and MPNet, and 22 versus 20 for E5. Padding caused slower batch totals for the strongly unequal cases; E5's near-equal batch was faster in this observation.
+
+To reproduce with identified local fixtures and explicit synthetic token IDs, build the extension and run `tests/embedding_batch_bench.tcl` in a fresh process. Its arguments are `model.onnx pad_id mean|cls single|batch`; provide one line on stdin with sequences separated by semicolons and IDs separated by spaces. Set `TCLLIBPATH` to the isolated build directory. Use `/usr/bin/time -f '%M'` around each separate process for peak RSS. Compute throughput as `sequence_count * 1000 / median_total_ms`. The separate `tests/onnx_batch_reference.c` accepts the same input line with arguments `model.onnx pad_id dimension mean|cls input_count`; it calls ONNX Runtime separately and calculates masking and pooling independently of the binding. Neither client proves PyTorch parity by itself.
+
+To build the separate C reference on the tested Unix setup:
+
+```bash
+cc -std=c11 -D_POSIX_C_SOURCE=200809L -O2 -Wall -Wextra -Werror \
+  $(pkg-config --cflags libonnxruntime) tests/onnx_batch_reference.c \
+  $(pkg-config --libs libonnxruntime) -lm -o "$build_dir/onnx_batch_reference"
+```
+
+The four-model numerical and performance experiments used batches of at most two sequences; three-row padding and stride are covered separately by the synthetic batch fixture.
+
+The standalone `make test-embedding-batch` target uses generated synthetic fixtures and does not require an external model. The existing full `make test` still requires the identified tokenizer and MiniLM ONNX fixtures for its pre-existing integration and lifecycle regressions; they are not downloaded by the test harness.
