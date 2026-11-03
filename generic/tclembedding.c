@@ -16,6 +16,7 @@ extern "C" {
 #include <math.h>
 #include <limits.h>
 #include <stdatomic.h>
+#include <string.h>
 #include "onnxruntime_c_api.h"
 
 // Estructura de estado
@@ -23,7 +24,8 @@ typedef struct {
     OrtSession* session;
     OrtSessionOptions* options;
     OrtEnv* env;
-    int embedding_dim;
+    int has_type_ids;
+    int64_t fixed_sequence;
     Tcl_Interp *interp;
     Tcl_Command command;
 } EmbeddingState;
@@ -69,6 +71,68 @@ static EmbeddingState *GetEmbeddingState(Tcl_Interp *interp, Tcl_Obj *name) {
     } \
 } while(0)
 
+/* Validate the encoder inputs once, before publishing a Tcl handle. */
+static int ValidateInputs(Tcl_Interp *interp, EmbeddingState *state) {
+    OrtStatus *st = NULL;
+    OrtAllocator *allocator = NULL;
+    OrtTypeInfo *type = NULL;
+    char *name = NULL;
+    size_t count = 0;
+    int seen = 0, result = TCL_ERROR;
+    int64_t fixed = 0;
+#define INPUT_CALL(expr) do { st = (expr); if (st) { \
+    Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); \
+    g_ort->ReleaseStatus(st); goto done; } } while (0)
+    INPUT_CALL(g_ort->GetAllocatorWithDefaultOptions(&allocator));
+    INPUT_CALL(g_ort->SessionGetInputCount(state->session, &count));
+    if (count != 2 && count != 3) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX model must have two or three supported inputs", -1)); goto done;
+    }
+    for (size_t i = 0; i < count; i++) {
+        const OrtTensorTypeAndShapeInfo *shape = NULL;
+        ONNXType kind;
+        ONNXTensorElementDataType element;
+        size_t rank = 0;
+        int64_t dims[2];
+        int bit;
+        INPUT_CALL(g_ort->SessionGetInputName(state->session, i, allocator, &name));
+        if (!name) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX input has no name", -1)); goto done; }
+        if (strcmp(name, "input_ids") == 0) bit = 1;
+        else if (strcmp(name, "attention_mask") == 0) bit = 2;
+        else if (strcmp(name, "token_type_ids") == 0) bit = 4;
+        else { Tcl_SetObjResult(interp, Tcl_ObjPrintf("unsupported ONNX input: %s", name)); goto done; }
+        if (seen & bit) { Tcl_SetObjResult(interp, Tcl_NewStringObj("duplicate ONNX input", -1)); goto done; }
+        seen |= bit;
+        INPUT_CALL(g_ort->SessionGetInputTypeInfo(state->session, i, &type));
+        INPUT_CALL(g_ort->GetOnnxTypeFromTypeInfo(type, &kind));
+        if (kind != ONNX_TYPE_TENSOR) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX input must be a tensor", -1)); goto done; }
+        INPUT_CALL(g_ort->CastTypeInfoToTensorInfo(type, &shape));
+        if (!shape) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX input tensor metadata unavailable", -1)); goto done; }
+        INPUT_CALL(g_ort->GetTensorElementType(shape, &element));
+        INPUT_CALL(g_ort->GetDimensionsCount(shape, &rank));
+        if (element != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 || rank != 2) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX inputs must be rank-2 int64 tensors", -1)); goto done;
+        }
+        INPUT_CALL(g_ort->GetDimensions(shape, dims, 2));
+        if ((dims[0] != 1 && dims[0] != -1) || dims[1] == 0 || dims[1] < -1 ||
+            (dims[1] > 0 && fixed && fixed != dims[1])) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("incompatible ONNX input shape", -1)); goto done;
+        }
+        if (dims[1] > 0) fixed = dims[1];
+        g_ort->ReleaseTypeInfo(type); type = NULL;
+        allocator->Free(allocator, name); name = NULL;
+    }
+    if ((seen & 3) != 3) { Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX model is missing required inputs", -1)); goto done; }
+    state->has_type_ids = (seen & 4) != 0;
+    state->fixed_sequence = fixed;
+    result = TCL_OK;
+done:
+    if (type) g_ort->ReleaseTypeInfo(type);
+    if (name && allocator) allocator->Free(allocator, name);
+#undef INPUT_CALL
+    return result;
+}
+
 // --- INIT ---
 static int TclEmbedding_Init_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
     (void)cd;
@@ -95,7 +159,10 @@ static int TclEmbedding_Init_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tc
 
     CHECK_STATUS_INIT(g_ort->CreateSession(state->env, model_path, state->options, &state->session));
 
-    state->embedding_dim = 384; // MiniLM-L12
+    if (ValidateInputs(interp, state) != TCL_OK) {
+        EmbeddingStateDelete(state);
+        return TCL_ERROR;
+    }
 
     char handle[64];
     do {
@@ -121,13 +188,23 @@ static int TclEmbedding_Init_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tc
 // --- COMPUTE ---
 static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
     (void)cd;
-    if (objc != 3) {
-        Tcl_WrongNumArgs(interp, 1, objv, "handle token_id_list");
+    if (objc != 3 && objc != 5) {
+        Tcl_WrongNumArgs(interp, 1, objv, "handle token_id_list ?-pooling mean|cls?");
         return TCL_ERROR;
     }
 
     EmbeddingState *state = GetEmbeddingState(interp, objv[1]);
     if (!state) return TCL_ERROR;
+    int cls = 0;
+    if (objc == 5) {
+        const char *option = Tcl_GetString(objv[3]);
+        const char *pooling = Tcl_GetString(objv[4]);
+        if (strcmp(option, "-pooling") != 0 || (strcmp(pooling, "mean") != 0 && strcmp(pooling, "cls") != 0)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("expected -pooling mean or cls", -1));
+            return TCL_ERROR;
+        }
+        cls = strcmp(pooling, "cls") == 0;
+    }
 
     // 1. TCL List -> C Array
     int token_count;
@@ -139,16 +216,17 @@ static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
         return TCL_ERROR;
     }
 
+    if (state->fixed_sequence && state->fixed_sequence != token_count) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("token count does not match fixed ONNX input sequence", -1));
+        return TCL_ERROR;
+    }
     size_t count = (size_t)token_count;
     if (count > SIZE_MAX / sizeof(int64_t) ||
-        count > UINT_MAX / sizeof(int64_t) ||
-        count > SIZE_MAX / (size_t)state->embedding_dim ||
-        count * (size_t)state->embedding_dim > SIZE_MAX / sizeof(float)) {
+        count > UINT_MAX / sizeof(int64_t)) {
         Tcl_SetObjResult(interp, Tcl_NewStringObj("token ID list is too large", -1));
         return TCL_ERROR;
     }
     size_t input_bytes = count * sizeof(int64_t);
-    size_t expected_elements = count * (size_t)state->embedding_dim;
     int64_t* input_ids = (int64_t*)ckalloc((unsigned int)input_bytes);
     int64_t* attention = (int64_t*)ckalloc((unsigned int)input_bytes);
     int64_t* type_ids  = (int64_t*)ckalloc((unsigned int)input_bytes);
@@ -201,15 +279,17 @@ static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
     st = g_ort->CreateTensorWithDataAsOrtValue(memory_info, attention, input_bytes, input_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t2);
     if (st) { Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); g_ort->ReleaseStatus(st); result = TCL_ERROR; goto cleanup; }
 
-    st = g_ort->CreateTensorWithDataAsOrtValue(memory_info, type_ids, input_bytes, input_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t3);
-    if (st) { Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); g_ort->ReleaseStatus(st); result = TCL_ERROR; goto cleanup; }
+    if (state->has_type_ids) {
+        st = g_ort->CreateTensorWithDataAsOrtValue(memory_info, type_ids, input_bytes, input_shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, &t3);
+        if (st) { Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); g_ort->ReleaseStatus(st); result = TCL_ERROR; goto cleanup; }
+    }
 
     const char* input_names[] = {"input_ids", "attention_mask", "token_type_ids"};
     const char* output_names[] = {"last_hidden_state"};
     const OrtValue* inputs[] = {t1, t2, t3};
 
     // 3. Ejecutar Inferencia
-    st = g_ort->Run(state->session, NULL, input_names, inputs, 3, output_names, 1, &t_out);
+    st = g_ort->Run(state->session, NULL, input_names, inputs, state->has_type_ids ? 3 : 2, output_names, 1, &t_out);
     if (st) {
         const char* msg = g_ort->GetErrorMessage(st);
         Tcl_SetObjResult(interp, Tcl_NewStringObj(msg, -1));
@@ -249,13 +329,17 @@ static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
     }
     st = g_ort->GetDimensions(output_shape, dimensions, 3);
     if (st) { Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); g_ort->ReleaseStatus(st); result = TCL_ERROR; goto cleanup; }
-    if (dimensions[0] != 1 || dimensions[1] != (int64_t)token_count || dimensions[2] != state->embedding_dim) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output tensor must have shape [1, token_count, 384]", -1));
+    if (dimensions[0] != 1 || dimensions[1] != (int64_t)token_count || dimensions[2] <= 0 || dimensions[2] > INT_MAX ||
+        (uint64_t)dimensions[2] > SIZE_MAX / sizeof(double) ||
+        (uint64_t)dimensions[2] > SIZE_MAX / count ||
+        count * (size_t)dimensions[2] > SIZE_MAX / sizeof(float)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output tensor must have a safe shape [1, token_count, hidden_dimension]", -1));
         result = TCL_ERROR; goto cleanup;
     }
     st = g_ort->GetTensorShapeElementCount(output_shape, &elements);
     if (st) { Tcl_SetObjResult(interp, Tcl_NewStringObj(g_ort->GetErrorMessage(st), -1)); g_ort->ReleaseStatus(st); result = TCL_ERROR; goto cleanup; }
-    if (elements != expected_elements) {
+    size_t embedding_dim = (size_t)dimensions[2];
+    if (elements != count * embedding_dim) {
         Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output tensor element count is inconsistent", -1));
         result = TCL_ERROR; goto cleanup;
     }
@@ -277,20 +361,20 @@ static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
     }
     // ------------------------------------
     
-    sum_vec = (double*)calloc(state->embedding_dim, sizeof(double));
-    if (!sum_vec) { result = TCL_ERROR; goto cleanup; }
+    sum_vec = (double*)calloc(embedding_dim, sizeof(double));
+    if (!sum_vec) { Tcl_SetObjResult(interp, Tcl_NewStringObj("unable to allocate embedding", -1)); result = TCL_ERROR; goto cleanup; }
 
     // A. Sumar
-    for (int t = 0; t < token_count; t++) {
-        for (int i = 0; i < state->embedding_dim; i++) {
-            sum_vec[i] += floats[(size_t)t * (size_t)state->embedding_dim + (size_t)i];
+    for (int t = 0; t < (cls ? 1 : token_count); t++) {
+        for (size_t i = 0; i < embedding_dim; i++) {
+            sum_vec[i] += floats[(size_t)t * embedding_dim + i];
         }
     }
     
     // B. Promediar y Calcular Norma
     double norm = 0.0;
-    for (int i = 0; i < state->embedding_dim; i++) {
-        sum_vec[i] /= token_count;
+    for (size_t i = 0; i < embedding_dim; i++) {
+        sum_vec[i] /= cls ? 1 : token_count;
         if (!isfinite(sum_vec[i])) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj("ONNX output produced non-finite mean values", -1));
             result = TCL_ERROR; goto cleanup;
@@ -306,7 +390,7 @@ static int TclEmbedding_Compute_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
 
     // C. Generar lista TCL normalizada
     Tcl_Obj *result_list = Tcl_NewListObj(0, NULL);
-    for (int i = 0; i < state->embedding_dim; i++) {
+    for (size_t i = 0; i < embedding_dim; i++) {
         Tcl_ListObjAppendElement(interp, result_list, Tcl_NewDoubleObj(sum_vec[i] / norm));
     }
     Tcl_SetObjResult(interp, result_list);

@@ -29,13 +29,15 @@ def value_info(name, elem, dims):
     tensor_type = integer(1, elem) + data(2, shape)
     return string(1, name) + data(2, data(1, tensor_type))
 
-def model(dims, elem, raw):
+def model(dims, elem, raw, inputs=None):
     tensor = b"".join(integer(1, d) for d in dims) + integer(2, elem) + data(9, raw)
     attribute = string(1, "value") + data(5, tensor) + integer(20, 4)
     node = string(2, "last_hidden_state") + string(4, "Constant") + data(5, attribute)
     graph = data(1, node) + string(2, "synthetic_safety")
-    for name in ("input_ids", "attention_mask", "token_type_ids"):
-        graph += data(11, value_info(name, 7, [1, "sequence"]))
+    if inputs is None:
+        inputs = [(name, 7, [1, "sequence"]) for name in ("input_ids", "attention_mask", "token_type_ids")]
+    for name, input_type, input_dims in inputs:
+        graph += data(11, value_info(name, input_type, input_dims))
     graph += data(12, value_info("last_hidden_state", elem, dims))
     return integer(1, 8) + string(2, "synthetic") + data(7, graph) + data(8, integer(2, 13))
 
@@ -63,3 +65,23 @@ for name, (dims, element, value) in fixtures.items():
     with (root / name).open("xb") as output:
         output.write(model(dims, element, raw))
     print(name)
+
+# Additional synthetic signatures and a nonuniform two-token output.
+def write_extra(name, inputs, dim=768):
+    values = ([1.0] + [0.0] * (dim - 1) + [0.0, 1.0] + [0.0] * (dim - 2))
+    raw = struct.pack("<" + "f" * len(values), *values)
+    with (root / name).open("xb") as output:
+        output.write(model([1, 2, dim], 1, raw, inputs))
+
+def inp(name, typ=7, dims=None):
+    return (name, typ, [1, "sequence"] if dims is None else dims)
+
+two = [inp("input_ids"), inp("attention_mask")]
+write_extra("two-768.onnx", two)
+write_extra("three-768.onnx", two + [inp("token_type_ids")])
+write_extra("unknown-input.onnx", two + [inp("other")])
+write_extra("missing-input.onnx", [inp("input_ids"), inp("token_type_ids")])
+write_extra("input-type.onnx", [inp("input_ids", 1), inp("attention_mask")])
+write_extra("input-rank.onnx", [inp("input_ids", 7, [1, 2, 3]), inp("attention_mask")])
+write_extra("input-batch.onnx", [inp("input_ids", 7, [2, "sequence"]), inp("attention_mask")])
+write_extra("fixed-input.onnx", [inp("input_ids", 7, [1, 2]), inp("attention_mask", 7, [1, 2])])

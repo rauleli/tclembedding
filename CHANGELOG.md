@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Slice 007 — four-model ONNX compatibility (formally accepted)
+
+- Validate the required two-input encoder signature and the optional third token-type input before publishing a handle; reject unsupported inputs and incompatible metadata with controlled errors.
+- Derive the hidden dimension from the validated float32 runtime output, with checked allocation and indexing. Add explicit `-pooling mean|cls` while retaining mean as the default and preserving L2.
+- Extend synthetic safety fixtures for two and three inputs, 768 dimensions, CLS versus mean, invalid input signatures and handle recovery. The existing 58 tokenizer cases, eight Rust tests, C ABI, lifecycle, MiniLM integration and safety tests passed.
+- The 18 serialized MiniLM vectors and 42-row PyTorch comparison were unchanged in the measured environment. BGE CLS, E5 mean and MPNet mean were compared against separate ONNX clients; subsequent direct binding-versus-PyTorch comparisons cover the identified cases for those models; see the cross-validation evidence below. See `CHARACTERIZATION.md` and `BENCHMARKING.md` for limits.
+
+### Slice 007 — direct PyTorch vector comparison
+
+- Compared the complete normalized PyTorch vectors directly with the Tcl binding for six BGE, seven E5 and five MPNet cases after checking model and tokenizer hashes, text identity, input IDs, masks, type IDs, truncation, dimensions and pooling. Maximum absolute differences were `2.908163e-7`, `1.260232e-7` and `3.657771e-7`; see `CHARACTERIZATION.md` for minimum cosines and limits.
+- The additional reference was generated in the identified CPU environment using the existing models and dependencies. No inference behavior was changed by this comparison. These measurements do not establish universal numerical tolerances, padding or concurrency support. Slice 007 is formally accepted within the evaluated models, revisions, configurations, cases and environments.
+
 ### Slice 006 — post-acceptance corrective maintenance
 
 * Validate the original Tcl `-max-length` integer's sign and range before wide conversion, preventing out-of-range negative values from wrapping into accepted positive limits. The existing model-specific limit 1 behavior and valid token IDs are retained.

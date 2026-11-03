@@ -42,3 +42,7 @@ For stable distribution and future publication, TEA, crate sources and ONNX Runt
 | Additional models | Select each model only after identifying tokenizer, signature, limit, pooling and parity evidence. The current backend does not guarantee universal support. |
 
 Autonomous retrieval, its consumers and any later integration need their own contracts and authorizations. No additional storage engine or application is decided here.
+
+### Slice 007 — four-model encoder characterization
+
+007-A characterized four identified ONNX models. 007-B implements validated two-/three-input encoder signatures, dynamic hidden dimensions and explicit mean/CLS pooling; the implementation is **formally accepted** within the identified models, revisions, configurations, cases and environments. Independent PyTorch/Sentence Transformers vectors were subsequently compared directly with the binding for the identified BGE, E5 and MPNet cases; see `CHARACTERIZATION.md` for scope and limits. General padding, batching, concurrency, portability and compatibility with untested models remain outside the demonstrated scope.

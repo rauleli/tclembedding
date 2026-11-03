@@ -94,7 +94,7 @@ Initializes the ONNX embedding model.
 
 **Errors:** Returns error if model cannot be loaded
 
-#### embedding::compute *handle* *token_id_list*
+#### embedding::compute *handle* *token_id_list* ?-pooling mean|cls?
 
 Computes the embedding vector from a list of token IDs.
 The list must be nonempty and contain nonnegative signed 64-bit integers.
@@ -104,11 +104,12 @@ Incompatible ONNX output tensors and zero or non-finite embedding norms return e
 - `handle` - Handle returned by `embedding::init_raw`
 - `token_id_list` - Tcl list of integer token IDs (from `tokenizer::tokenize`)
 
-**Returns:** A list of 384 floating-point numbers representing an L2-normalized embedding.
+**Returns:** A list of floating-point numbers representing an L2-normalized embedding. The length is the validated hidden dimension of the ONNX output (384 or 768 in the evaluated models).
 
 **Features:**
-- Mean pooling across tokens
-- L2 normalization
+- `-pooling mean` averages token positions and is the default. `-pooling cls` uses the first token.
+- L2 normalization; no automatic pooling selection, truncation or input prefixes.
+- Input signatures with the required rank-2 int64 `input_ids` and `attention_mask`, and optional `token_type_ids`, are validated at initialization. Additional inputs are rejected.
 
 #### embedding::free *handle*
 
@@ -152,7 +153,7 @@ The characterized model is `sentence-transformers/paraphrase-multilingual-MiniLM
 set tokens [tokenizer::tokenize $text -max-length 128]
 ```
 
-`embedding::compute` always applies L2 normalization; there is currently no public option to disable it. Thus its output should be compared with a separately normalized Sentence Transformers embedding, using equivalent IDs and attention masks. Different truncation or normalization settings can change vectors even when the numeric calculation is correct. The comparison covered batch size one without actual padding; padding, concurrent use and compatibility with other models are not established. Slice 003 acceptance is limited to the evaluated model, revision, environments, configurations and cases; see `CHARACTERIZATION.md` for measured errors and limits.
+`embedding::compute` always applies L2 normalization; there is currently no public option to disable it. Thus its output should be compared with a separately normalized Sentence Transformers embedding, using equivalent IDs and attention masks. Different truncation or normalization settings can change vectors even when the numeric calculation is correct. The comparison covered batch size one without actual padding; real padding, concurrent use and universal model compatibility are not established. Other ONNX configurations have separate, limited evidence in `CHARACTERIZATION.md`. Slice 003 acceptance is limited to the evaluated model, revision, environments, configurations and cases; see `CHARACTERIZATION.md` for measured errors and limits.
 
 ## Model Files
 
@@ -213,9 +214,9 @@ models/
 - **CPU inference** with ONNX Runtime
 - **Intra-op parallelism** configured to one thread in the current binding
 - **Sequential execution mode** for memory efficiency
-- **Mean pooling** for variable-length inputs
+- **Mean or first-token pooling** selected explicitly by the caller
 
-Performance has not been characterized for this build.
+Exploratory measurements and their limitations are recorded in `BENCHMARKING.md`; they are not general performance guarantees.
 
 ## Architecture Details
 
@@ -227,7 +228,7 @@ Performance has not been characterized for this build.
 ### Output Processing
 
 1. Extract last hidden state from ONNX model
-2. Apply mean pooling across token dimension
+2. Apply mean pooling across the token dimension by default, or first-token pooling when explicitly selected
 3. Calculate L2 norm and normalize vector
 4. Return as Tcl list of floats
 

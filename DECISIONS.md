@@ -24,7 +24,7 @@ This corrects a no-op `free` and unowned lifecycle without changing inference, p
 
 ## D-004 — Native input and output safety
 
-**Status: authorized, implemented and formally accepted in Slice 003-B1, with the outstanding issues recorded in `ROADMAP.md`.** `embedding::compute` rejects empty ID lists, non-integers, negative values and values outside signed 64-bit range. It validates allocation arithmetic and requires a float32 output tensor with shape `[1, token_count, 384]` and the expected element count before reading it. Zero or non-finite mean norms and non-finite means return errors. The existing operation order, normalization threshold and output for valid finite nonzero inputs remain unchanged. The check does not impose a vocabulary-size limit or expand supported models. Slice 003 was subsequently accepted within the scope of the documented evidence. Sources: `generic/tclembedding.c`, `tests/embedding_safety_test.tcl`.
+**Status: authorized, implemented and formally accepted in Slice 003-B1, with the outstanding issues recorded in `ROADMAP.md`.** `embedding::compute` rejects empty ID lists, non-integers, negative values and values outside signed 64-bit range. At the time it validated allocation arithmetic and required a float32 output tensor with shape `[1, token_count, 384]` and the expected element count before reading it. Zero or non-finite mean norms and non-finite means return errors. The existing operation order, normalization threshold and output for valid finite nonzero inputs remain unchanged. That change did not impose a vocabulary-size limit or expand supported models; see D-006 for the later dimension change. Slice 003 was subsequently accepted within the scope of the documented evidence. Sources: `generic/tclembedding.c`, `tests/embedding_safety_test.tcl`.
 
 ## D-005 — Embedding normalization and truncation contract
 
@@ -32,12 +32,16 @@ This corrects a no-op `free` and unowned lifecycle without changing inference, p
 
 The model's default `SentenceTransformer.encode()` output is not L2-normalized; it must be normalized separately before a like-for-like comparison with the current Tcl output. The configured limit comes from the model's `sentence_bert_config.json`, not a universal tokenizer limit. Different truncation or normalization choices can change vectors. This acceptance applies only to the model, revision, configurations, cases and environments actually evaluated; it does not establish universal compatibility or approve an optional unnormalized output. Sources: `CHARACTERIZATION.md`, `README.md`, `generic/tclembedding.c`.
 
+## D-006 — Explicit pooling and validated encoder signatures
+
+**Status: implemented and formally accepted within the tested scope of Slice 007.** `embedding::compute handle token_ids ?-pooling mean|cls?` preserves mean pooling by default. The caller explicitly selects first-token pooling when required; no model-name heuristics, automatic prefixes or automatic truncation are introduced. L2 normalization remains unchanged. Session initialization validates the required rank-2 int64 `input_ids` and `attention_mask`, permits `token_type_ids` only when declared, and rejects additional or incompatible inputs. The actual float32 output must have shape `[1, token_count, hidden_dimension]`, with safe allocation and element-count checks. A dynamic dimension does not establish compatibility with arbitrary graphs. See `CHARACTERIZATION.md` for model-specific evidence and the limits of the PyTorch comparisons.
+
 ## Open decisions
 
 | Question | Status |
 | --- | --- |
 | Supported model families and revisions; numerical references and tolerances | Pending evidence and decision. |
-| Additional ONNX inference contracts, pooling variants, dimensions and normalization options | Pending; the current L2 and truncation behavior is accepted as described in D-005. |
+| Additional ONNX signatures, pooling variants and normalization options beyond D-006 | Pending; L2 and truncation remain as described in D-005. |
 | General compatibility, cross-platform distribution and model-specific limits | Pending. |
 | Broader tokenizer concurrency and concurrent handle destruction | Pending evidence; Slice 006 removed per-call truncation cloning within its accepted scope. |
 | Alternative backends or formats for future models | Pending; future models are not assumed to use `tokenizer.json`. |
