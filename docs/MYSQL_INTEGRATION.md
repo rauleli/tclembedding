@@ -1,5 +1,7 @@
 # MySQL Integration with tclembedding
 
+> The legacy examples below require review before use with the current UDF: see [MYSQL_UDF.md](MYSQL_UDF.md) for its vector format, error contract and limited isolated-server validation.
+
 Complete guide to integrating text embeddings with MySQL for semantic search and RAG (Retrieval-Augmented Generation) applications.
 
 ## Overview

@@ -1,630 +1,111 @@
-# MySQL User Defined Function (UDF) for cosine_similarity
+# MySQL cosine similarity UDF
 
-Complete guide to compiling, installing, and using the `cosine_similarity` UDF in MySQL for semantic search with tclembedding.
+`src/rag_optimizations.c` provides `cosine_similarity` for two binary vectors. It is independent of the ONNX and tokenizer bindings. The standalone numeric tests described here do not establish MySQL or MariaDB server integration.
 
-## Overview
+## Input and output contract
 
-The `cosine_similarity` UDF is a MySQL function that calculates the cosine similarity between two embedding vectors stored as binary data. This enables fast semantic search directly within MySQL queries.
+Each non-NULL argument must be a BLOB containing a positive number of IEEE 754 binary32 values in little-endian byte order. Both BLOBs must have equal byte length, divisible by four. All components must be finite, and each vector must have nonzero magnitude. The UDF accumulates products and squared magnitudes in double precision, then returns cosine similarity as a SQL REAL. Rounding may produce values very slightly outside the mathematical interval [-1, 1].
 
-**Source File:** `src/rag_optimizations.c`
+A SQL NULL argument, malformed lengths, unequal dimensions, empty vectors, zero magnitudes, NaN, infinity and non-finite results return SQL NULL by setting the per-row `is_null` flag, without setting MySQL's persistent `error` flag. Invalid argument count or types cause an initialization error. A NULL score alone cannot distinguish a NULL argument from invalid vector data; validate embeddings during ingestion. In the isolated MySQL 8.4.10 test, a valid–invalid–valid sequence returned `1, NULL, 1`, and a top-k query excluding NULL retained both valid rows. Identical argument pointers are still fully validated. The binary format is the same as Example 02's `binary format r*`; `binary format f*` is native-endian and must not be assumed portable. Arbitrary bytes cannot prove their intended endianness or model identity: callers must track format, dimension and model separately.
 
-### What is Cosine Similarity?
+The initialization sets `UDF_INIT.decimals` to 31, MySQL's value for an unspecified number of decimal places ([loadable function documentation](https://dev.mysql.com/doc/extending-mysql/8.4/en/adding-loadable-function.html)). This avoids forcing a fixed zero-decimal output on the tested server; it does not guarantee a fixed number of digits across clients or MySQL versions. For synthetic vectors `[-2, 3]` and `[4, -5]`, MySQL 8.4.10 returned `-0.9962405881956831` directly, without CAST. The earlier implementation displayed `-1` and could propagate an invalid-row error to later rows in the same statement; both behaviors were corrected and retested within the scope below.
 
-Cosine similarity measures the angle between two vectors in an N-dimensional space (0-384 dimensions for embeddings):
-
-```
-          vec1 · vec2
-similarity = ─────────────────
-             |vec1| × |vec2|
-```
-
-- Returns **1.0** for identical vectors (100% similar)
-- Returns **0.0** for orthogonal vectors (completely different)
-- Returns negative values for opposite directions
-
-### Why Use a MySQL UDF?
-
-Instead of:
-1. Fetching all embeddings from MySQL
-2. Computing similarity in Tcl
-3. Sorting results
-
-You get:
-1. **Faster queries** - Calculation in MySQL at C speed
-2. **Database-level filtering** - ORDER BY similarity directly
-3. **Scalability** - Handles millions of embeddings efficiently
-
-## Prerequisites
-
-### Required Tools
-
-- **MySQL 5.7 or later** (tested with 8.0)
-  - Development headers: `libmysqlclient-dev` or `mysql-devel`
-  - Running MySQL server
-
-- **C Compiler**
-  - GCC 7.0+
-  - Clang 5.0+
-
-- **Build Tools**
-  - GNU Make
-  - Header files for MySQL
-
-### Linux Installation
-
-#### Ubuntu/Debian
-
-```bash
-# Install MySQL development files
-sudo apt-get install mysql-server mysql-client libmysqlclient-dev
-
-# Verify MySQL is running
-sudo systemctl start mysql
-sudo systemctl status mysql
-```
-
-#### Fedora/RHEL
-
-```bash
-# Install MySQL development files
-sudo dnf install mysql mysql-devel gcc make
-
-# Start MySQL
-sudo systemctl start mysqld
-sudo systemctl enable mysqld
-```
-
-#### macOS (Homebrew)
-
-```bash
-# Install MySQL
-brew install mysql
-
-# Start MySQL
-brew services start mysql
-
-# Install development files (included with Homebrew)
-# Homebrew automatically installs headers
-```
-
-## Step-by-Step Installation
-
-### 1. Check MySQL Version
-
-```bash
-mysql --version
-# MySQL Ver 8.0.x Client...
-```
-
-Ensure version 5.7 or later.
-
-### 2. Locate MySQL Headers and Libraries
-
-```bash
-# Find MySQL include directory
-mysql_config --include
-# Output example: -I/usr/include/mysql
-
-# Find MySQL lib directory
-mysql_config --libs
-# Output example: -L/usr/lib/x86_64-linux-gnu -lmysqlclient
-```
-
-Note these paths for compilation.
-
-### 3. Compile the UDF
-
-Navigate to the source directory:
-
-```bash
-cd /path/to/tclembedding/src
-```
-
-Compile using the provided compilation command:
-
-```bash
-gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --include) -lm
-```
-
-**Flags explanation:**
-- `-shared` - Create shared library
-- `-fPIC` - Position-independent code
-- `-march=native` - Optimize for the CPU where compilation occurs
-- `-O3` - Maximum optimization level for best performance
-- `-msse3` - Enable SSE3 instructions (explicit SIMD support)
-- `-msse4a` - Enable SSE4a instructions (AMD-specific optimizations for Phenom II)
-- `$(mysql_config --include)` - MySQL headers location (auto-detected)
-- `-lm` - **Required**: Link math library for `sqrtf()` in magnitude calculations
-
-**SIMD Acceleration:**
-The UDF uses hardware-accelerated vector operations:
-- **SSE3/SSE4a**: Processes 4 floats per iteration (AMD Phenom II, Intel Core 2+)
-- **AVX**: Processes 8 floats per iteration (Intel Sandy Bridge+, AMD Bulldozer+)
-- **Fallback**: Scalar processing for older CPUs
-
-For 384-dimensional embeddings (E5-small), this means:
-- SSE: 96 parallel iterations instead of 384 scalar operations
-- AVX: 48 parallel iterations for even faster processing
-
-**Platform-Specific Adjustments:**
-
-For macOS:
-```bash
-gcc -dynamiclib -fPIC -march=native -O3 -msse3 \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
-  -I$(brew --prefix mysql)/include -lm
-```
-
-For CentOS/RHEL:
-```bash
-gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --include) -lm
-```
-
-### 4. Verify Compilation
-
-Check that the shared library was created:
-
-```bash
-ls -lah mysql_cosine_similarity.so
-# -rw-r--r-- 1 user group 15K Dec 21 12:34 mysql_cosine_similarity.so
-```
-
-Test for missing symbols:
-
-```bash
-nm mysql_cosine_similarity.so | grep "cosine_similarity"
-# Expected: U (undefined) or T (text/code) symbols
-```
-
-### 5. Install the UDF Library
-
-Copy the compiled library to MySQL's plugin directory:
-
-```bash
-# Find plugin directory
-mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
-# Output: plugin_dir | /usr/lib/mysql/plugin
-
-# Copy library (adjust path as needed)
-sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/
-
-# Set permissions
-sudo chmod 755 /usr/lib/mysql/plugin/mysql_cosine_similarity.so
-sudo chown mysql:mysql /usr/lib/mysql/plugin/mysql_cosine_similarity.so
-```
-
-**Alternative for custom MySQL installations:**
-
-```bash
-# Find your MySQL plugin directory
-PLUGIN_DIR=$(mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';" | tail -1 | awk '{print $2}')
-
-sudo cp mysql_cosine_similarity.so "$PLUGIN_DIR/"
-sudo chmod 755 "$PLUGIN_DIR/mysql_cosine_similarity.so"
-```
-
-### 6. Register the UDF in MySQL
-
-Connect to MySQL as root or an admin user:
-
-```bash
-mysql -u root -p
-```
-
-Create the function:
+Examples of little-endian float32 bytes:
 
 ```sql
-CREATE FUNCTION cosine_similarity RETURNS REAL
-SONAME 'mysql_cosine_similarity.so';
+-- [1, 0] with itself: 1
+SELECT cosine_similarity(X'0000803F00000000', X'0000803F00000000');
+-- [1, 0] and [0, 1]: 0
+SELECT cosine_similarity(X'0000803F00000000', X'000000000000803F');
+-- A NULL argument returns NULL.
+SELECT cosine_similarity(NULL, X'0000803F');
 ```
 
-**Example session:**
-```bash
-$ mysql -u root -p
-Enter password:
-mysql> CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
-Query OK, 0 rows affected (0.05 sec)
+## Compilation and deployment
 
-mysql> SELECT cosine_similarity(x'3f800000', x'3f800000');
-+---------------------------------------------+
-| cosine_similarity(x'3f800000', x'3f800000') |
-+---------------------------------------------+
-|                                           1 |
-+---------------------------------------------+
-1 row in set (0.00 sec)
+Use a C11 compiler and development headers matching the target MySQL or MariaDB server. MySQL 8.4.10 headers were used to compile the corrected UDF with GCC 15.3.1 and `-Wall -Wextra -Werror`. For an environment that supplies `mysql_config`, an example Linux build is:
+
+```sh
+cc -std=c11 -O3 -fPIC -shared $(mysql_config --include) \
+  src/rag_optimizations.c -o mysql_cosine_similarity.so -lm
 ```
 
-### 7. Verify Installation
+Do not use `-ffast-math` or `-ffinite-math-only`: the source rejects these options because they undermine NaN and infinity validation. Do not assume a library built for one server version is ABI-compatible with another. MySQL 8 uses a `bool` UDF initialization result and unsigned-byte status pointers; MariaDB and older MySQL headers use `my_bool` and char status pointers. The source selects types from the headers. MySQL 8.4.10 header types, direct library calls and isolated server invocation passed; MariaDB headers and server invocation remain unverified.
 
-Test the function with sample data:
+After an administrator independently verifies the target server's plugin directory, library compatibility and permissions, install the shared library there and register it manually:
 
 ```sql
--- Test with identical vectors (should return 1.0)
-SELECT cosine_similarity(
-    x'3f80000000000000000000000000000',  -- All 1.0 in float
-    x'3f80000000000000000000000000000'   -- Same vector
-) AS similarity;
--- Result: 1.0
-
--- Test with orthogonal vectors (should return 0.0)
-SELECT cosine_similarity(
-    x'3f8000000000000000000000',  -- [1, 0, 0]
-    x'0000000000000000000000003f800000'  -- [0, 0, 1]
-) AS similarity;
--- Result: 0.0
-```
-
-### 8. Persist the UDF Registration
-
-Make the UDF registration permanent by adding to a startup script or include file:
-
-**Option A: Add to my.cnf**
-
-```bash
-sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
-```
-
-Add at the end:
-
-```ini
-[mysqld]
-# UDF registration
-init-file=/etc/mysql/udf-init.sql
-```
-
-Create `/etc/mysql/udf-init.sql`:
-
-```sql
--- Automatically create UDF function on MySQL startup
-CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL
-SONAME 'mysql_cosine_similarity.so';
-```
-
-**Option B: Add to database initialization**
-
-In your application initialization:
-
-```tcl
-# Ensure UDF is registered on connection
-set db [mysql::connect -u root -db your_database]
-catch {
-    mysql::query $db "CREATE FUNCTION IF NOT EXISTS cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';"
-}
-```
-
-## Usage
-
-### Basic Syntax
-
-```sql
-cosine_similarity(vector1_blob, vector2_blob)
-```
-
-**Arguments:**
-- `vector1_blob` - BINARY data (384 floats × 4 bytes = 1536 bytes)
-- `vector2_blob` - BINARY data (same format)
-
-**Returns:**
-- REAL (floating point: -1.0 to 1.0)
-
-### Examples
-
-#### Example 1: Simple Similarity Calculation
-
-```sql
-SELECT cosine_similarity(embedding1, embedding2) AS similarity
-FROM embeddings_table
-LIMIT 1;
-```
-
-#### Example 2: Find Similar Documents
-
-```sql
--- Find the 5 most similar documents to a query vector
-SELECT document_id, title, cosine_similarity(embedding, @query_vector) AS score
-FROM documents
-ORDER BY score DESC
-LIMIT 5;
-```
-
-#### Example 3: Similarity Threshold
-
-```sql
--- Find documents above 70% similarity
-SELECT document_id, title, cosine_similarity(embedding, @query_vector) AS score
-FROM documents
-WHERE cosine_similarity(embedding, @query_vector) > 0.7
-ORDER BY score DESC;
-```
-
-#### Example 4: Join with Similarity
-
-```sql
--- Find all similar pairs above threshold
-SELECT
-    d1.document_id AS doc1_id,
-    d2.document_id AS doc2_id,
-    cosine_similarity(d1.embedding, d2.embedding) AS similarity
-FROM documents d1
-JOIN documents d2 ON d1.id < d2.id
-WHERE cosine_similarity(d1.embedding, d2.embedding) > 0.8
-ORDER BY similarity DESC;
-```
-
-## Function Behavior
-
-### Input Validation
-
-The function validates inputs:
-
-```c
-// Checks that:
-if (args->arg_count != 2) {
-    // ERROR: Requires exactly 2 arguments
-}
-
-if (args->arg_type[0] != STRING_RESULT ||
-    args->arg_type[1] != STRING_RESULT) {
-    // ERROR: Both arguments must be BLOB/STRING
-}
-
-if (len1 != len2 || len1 % 4 != 0) {
-    // ERROR: Vectors must be same length and divisible by 4 (float size)
-}
-```
-
-### Null Handling
-
-```sql
--- Returns NULL if either argument is NULL
-SELECT cosine_similarity(NULL, @vector);  -- Returns NULL
-SELECT cosine_similarity(@vector, NULL);  -- Returns NULL
-```
-
-### Zero Vector Handling
-
-```c
-// If either vector has zero magnitude, returns 0.0
-// (mathematically undefined, but practical choice)
-if (magnitude1 == 0.0 || magnitude2 == 0.0) {
-    return 0.0;
-}
-```
-
-## Preparing Vector Data for MySQL
-
-### From Tcl Embeddings
-
-Convert embeddings from Tcl to MySQL binary format:
-
-```tcl
-package require tclembedding
-package require tokenizer
-
-# Load tokenizer and model
-tokenizer::load_vocab "tokenizer.json"
-set handle [embedding::init_raw "model.onnx"]
-
-# Get embedding from tclembedding
-set tokens [tokenizer::tokenize "my text"]
-set embedding_list [embedding::compute $handle $tokens]
-# Result: {0.123 0.456 0.789 ...} (list of floats)
-
-# Convert to binary (4 bytes per float)
-set binary_data [binary format f* $embedding_list]
-
-# Insert into MySQL
-set escaped_binary [mysql::escape $db $binary_data]
-mysql::query $db "INSERT INTO embeddings (embedding) VALUES ('$escaped_binary')"
-```
-
-### Creating a Table for Embeddings
-
-```sql
-CREATE TABLE embeddings (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    document_id INT,
-    content TEXT,
-    embedding BINARY(1536),  -- 384 floats * 4 bytes
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX (document_id),
-    INDEX (created_at)
-) ENGINE=InnoDB;
-```
-
-## Performance Optimization
-
-### Index Considerations
-
-Note: Standard MySQL indexes don't accelerate similarity searches (since similarity is not monotonic).
-
-For optimal performance:
-
-1. **Partition by category** - If you have categories, partition your table
-2. **Use WHERE clauses** - Filter before similarity calculation
-3. **Limit results** - Use LIMIT to stop early
-
-```sql
--- Faster: Filter first, then calculate similarity
-SELECT id, title, cosine_similarity(embedding, @query) AS score
-FROM documents
-WHERE category = 'news'  -- Filter first
-ORDER BY score DESC
-LIMIT 10;
-```
-
-### Query Performance
-
-Typical performance metrics:
-
-| Operation | Time |
-|-----------|------|
-| UDF call overhead | <1μs |
-| Similarity calculation (384 dims) | 1-5μs |
-| Query on 1M rows | 1-5 seconds |
-| Query with WHERE clause | <100ms |
-
-## Troubleshooting
-
-### "ERROR 1126: Can't open shared library"
-
-**Cause:** File not found or permission issues
-
-**Solution:**
-```bash
-# Verify file exists and is readable
-ls -la /usr/lib/mysql/plugin/mysql_cosine_similarity.so
-
-# Check permissions
-sudo chmod 755 /usr/lib/mysql/plugin/mysql_cosine_similarity.so
-
-# Check MySQL plugin_dir
-mysql -u root -e "SHOW VARIABLES LIKE 'plugin_dir';"
-```
-
-### "ERROR 1127: Can't find symbol in library"
-
-**Cause:** Missing symbol or incompatible MySQL version
-
-**Solution:**
-```bash
-# Recompile with correct MySQL headers
-mysql_config --cflags --libs  # Check what MySQL expects
-
-# Recompile with visible symbols
-gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --include) -lm
-```
-
-### "ERROR 1305: FUNCTION cosine_similarity does not exist"
-
-**Cause:** Function not registered
-
-**Solution:**
-```sql
--- Register the function
 CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'mysql_cosine_similarity.so';
-
--- Verify registration
-SHOW FUNCTION STATUS WHERE Db = 'database_name';
 ```
 
-### "ERROR 1307: Can't drop function cosine_similarity"
+Do not register experimental functions on a server used by other applications. Use a separately authorized isolated test instance and its own plugin directory. No automatic installation, service configuration or registration is provided here.
 
-**Cause:** UDF used by queries
+## CPU paths
 
-**Solution:**
-```sql
--- Drop is usually not needed, but if necessary:
-DROP FUNCTION IF EXISTS cosine_similarity;
+The default implementation is scalar C. An optional SSE2 implementation is enabled only when explicitly compiling with `-DCOSINE_ENABLE_SSE2` and the compiler targets x86/x86-64 with `__SSE2__`; e.g., on a compatible target add `-msse2 -DCOSINE_ENABLE_SSE2`. There is no runtime CPU dispatch: the operator must ensure the deployment CPU supports every instruction emitted by the compiler. The default scalar source remains available on non-x86 targets with compatible C float representation; non-x86 execution has not been tested. Compiling with hardware-specific flags can generate additional instructions outside the explicitly selected code path, so build for the intended deployment baseline rather than requiring `-march=native`.
+
+The SSE2 path uses double-precision vector arithmetic and decodes little-endian bytes without assuming pointer alignment. SSE3 and SSE4.1 are not needed for this implementation. AMD SSE4a is not SSE4.1. No explicit AVX2 or FMA implementation or runtime dispatch is included; compiling with those flags does not establish that an AVX2/FMA-specific implementation was tested or is safe on older CPUs.
+
+## Reproducible standalone tests and observed measurements
+
+On Linux x86-64 with GCC and Tcl 8.6:
+
+```sh
+tclsh tests/mysql_cosine_test.tcl
 ```
 
-### Vectors Return Wrong Similarity Values
+The Tcl runner compiles a scalar binary and, when the host advertises SSE2, an SSE2 binary in a new temporary directory. It tests 768 synthetic vector lengths, including 384 and 768, against an independent long-double scalar calculation with absolute tolerance `1e-12`; it also checks equal, orthogonal and opposite vectors, malformed lengths, unaligned bytes, zero vectors, NaN, infinity, float32 extremes and little-endian decoding. A separate C test uses **synthetic UDF structure definitions** to exercise the wrapper flags. Those test types do not establish ABI compatibility. On an SSE2 host the runner also checks whether GCC can compile with AVX2/FMA flags; that binary is never executed. The test runner expects Linux `/proc/cpuinfo`; other platforms need a separate test procedure.
 
-**Cause:** Incorrect binary format
+After compiling the separately named library shown below, the following direct test uses real MySQL development headers and loads that library; it does not connect to MySQL:
 
-**Solution:**
-```tcl
-# Verify binary format
-set vector {1.0 0.0 0.0}
-set binary [binary format f* $vector]
-puts "Binary length: [string length $binary]"
-# Should be: [llength $vector] * 4 = 12 bytes
-
-# Verify in MySQL
-SELECT LENGTH(embedding) FROM embeddings LIMIT 1;
-# Should be: 1536 for 384-float embeddings
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror $(mysql_config --include) \
+  tests/mysql_udf_real_headers_test.c -o "$LAB_DIR/real-header-test" -ldl -lm
+"$LAB_DIR/real-header-test" "$LAB_DIR/plugins/mysql_cosine_v2.so"
 ```
 
-## Advanced: Rebuilding for Different MySQL Versions
+On an AMD Phenom II X4 965 with GCC 15.3.1, the CPU advertised SSE2, SSE3 and SSE4a, not SSE4.1, AVX or AVX2. Both scalar and SSE2 standalone tests passed. Five independent processes per implementation each measured 10,000 calls on a 768-component synthetic pair after the correctness loop. Scalar elapsed times were 25.748–26.051 ms (median 25.788 ms); SSE2 times were 36.392–48.303 ms (median 37.363 ms). The scalar build disabled tree vectorization for this comparison. These short, unpinned, single-machine measurements exclude SQL, are not throughput guarantees and do not predict scaling to large tables; SSE2 was slower in this observation. The SSE2 path therefore remains opt-in.
 
-### Check MySQL Configuration
+MySQL Server 8.4.10, matching development headers and `mysql_config` were available for the real-header build. A separate process loaded the corrected shared library and exercised its exported functions using the actual MySQL header structures and function-pointer types. Subsequently, an isolated MySQL 8.4.10 server with TCP disabled loaded a separately named library and registered `cosine_similarity_v2` in its own data directory. The server reported that `component_reference_cache.so` was absent from the isolated plugin directory, but became ready and executed the checks; effects outside these checks were not investigated. Direct SQL results without CAST matched independent Tcl numeric calculations at absolute tolerance `1e-12` for identical, orthogonal, opposite and signed vectors, positive and near-zero values, 384 and 768 dimensions and float32 extremes. Tests also covered SQL NULL, malformed and unequal lengths, empty and zero vectors, NaN and infinities, non-string initialization errors, per-row recovery and top-k with NULL excluded. No running production server or system plugin directory was modified. MariaDB, other platforms and server query performance remain unverified.
 
-```bash
-# Get compiler flags used to build MySQL
-mysql_config --cflags
-# Output: -I/usr/include/mysql
+A bounded standalone scalar run under Valgrind exited successfully with no errors or definite/indirect losses reported under the selected options. This did not exercise a database server or establish general leak freedom. An AddressSanitizer build could not link because the local ASan runtime was unavailable.
 
-# Get linker flags
-mysql_config --libs
-# Output: -L/usr/lib/x86_64-linux-gnu -lmysqlclient
+### Historical artifact
+
+An independently installed historical shared object was observed with size 15,840 bytes, modification date 2025-12-22 and SHA-256 `e8757e41b33b397099e327933dfbc461617627af114cb7604538e2f87fb48890`. Its exported names include `cosine_similarity`, `cosine_similarity_init` and `cosine_similarity_deinit`. A basic identical-vector SQL result of 1 was reported for that installation; it was not repeated in this characterization. The observed file's timestamp and reported use do not establish which source revision produced its bytes. The author subsequently removed the historical function registration and installed shared object; a read-only check confirmed their absence. The corrected implementation is a separate build and was not installed as a replacement.
+
+### Isolated server procedure
+
+The following is a procedure to execute only on a system where private Unix sockets and a user-owned MySQL data directory are permitted. It creates a fresh insecure root account **only inside the isolated data directory**, disables TCP and the X protocol, and uses a separate plugin directory. It must not point at an existing server's data, socket or plugin directory. The isolated server remains a separate process that must be shut down through its own socket.
+
+```sh
+LAB_DIR=$(mktemp -d)
+mkdir -m 700 "$LAB_DIR/data" "$LAB_DIR/tmp" "$LAB_DIR/plugins"
+cc -std=c11 -O3 -Wall -Wextra -Werror -fPIC -shared $(mysql_config --include) \
+  -Dcosine_similarity=cosine_similarity_v2 \
+  -Dcosine_similarity_init=cosine_similarity_v2_init \
+  -Dcosine_similarity_deinit=cosine_similarity_v2_deinit \
+  src/rag_optimizations.c -o "$LAB_DIR/plugins/mysql_cosine_v2.so" -lm
+mysqld --no-defaults --initialize-insecure --basedir=/usr \
+  --datadir="$LAB_DIR/data" --tmpdir="$LAB_DIR/tmp" \
+  --plugin-dir="$LAB_DIR/plugins" --log-error="$LAB_DIR/init.log"
+mysqld --no-defaults --basedir=/usr --datadir="$LAB_DIR/data" \
+  --tmpdir="$LAB_DIR/tmp" --plugin-dir="$LAB_DIR/plugins" \
+  --socket="$LAB_DIR/mysql.sock" --pid-file="$LAB_DIR/mysql.pid" \
+  --skip-networking --mysqlx=0 --log-error="$LAB_DIR/server.log" &
 ```
 
-### Build with Correct Flags
+Once the isolated server is ready, use its socket explicitly:
 
-```bash
-# Automatic method (recommended)
-gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
-  $(mysql_config --include) -lm
-
-# This ensures compatibility with your MySQL installation
+```sh
+mysql --no-defaults --protocol=socket --socket="$LAB_DIR/mysql.sock" -uroot \
+  -e "CREATE FUNCTION cosine_similarity_v2 RETURNS REAL SONAME 'mysql_cosine_v2.so'; SELECT cosine_similarity_v2(X'0000803F', X'0000803F');"
+tclsh tests/mysql_udf_integration.tcl "$LAB_DIR/mysql.sock" "$LAB_DIR"
+mysqladmin --no-defaults --protocol=socket --socket="$LAB_DIR/mysql.sock" -uroot shutdown
 ```
 
-### Verify Binary Compatibility
+The Tcl test requires `mysqltcl`, checks the supplied socket, data and plugin directories and requires TCP to be disabled. It tests the registered `cosine_similarity_v2` function; never point it at a production socket. The procedure needs an environment that permits private Unix sockets.
 
-```bash
-# List symbols used
-nm mysql_cosine_similarity.so | grep -E "mysql|UDF"
+## Legacy examples
 
-# Check dependencies
-ldd mysql_cosine_similarity.so
-# Should show: libmysqlclient.so => /usr/lib/...
-```
-
-## Security Considerations
-
-### Input Sanitization
-
-The UDF function validates inputs:
-
-```c
-if (args->arg_count != 2) {
-    strcpy(message, "cosine_similarity() requires exactly 2 arguments");
-    return 1;
-}
-```
-
-**Note:** The function expects binary data only. Text input should be:
-
-1. Generated from embeddings (binary format)
-2. Properly escaped when inserted via SQL
-
-### Safe Usage Pattern
-
-```tcl
-# Safe: Use prepared statements or proper escaping
-set db [mysql::connect -u user -password pass -db database]
-
-# Generate embedding
-set tokens [tokenizer::tokenize "user input"]
-set vector [embedding::compute $handle $tokens]
-set binary_data [binary format f* $vector]
-
-# Escape before insertion
-set escaped [mysql::escape $db $binary_data]
-mysql::query $db "INSERT INTO embeddings (data) VALUES ('$escaped')"
-
-# Safe query
-mysql::query $db "SELECT * FROM embeddings \
-  WHERE cosine_similarity(data, '$escaped') > 0.7"
-```
-
-## Complete Example
-
-See `tools/search.tcl` for a complete working example integrating tclembedding with MySQL UDF.
-
-## Reference
-
-- **Source:** `src/rag_optimizations.c`
-- **Integration:** `tools/search.tcl`
-- **Example Schema:** `tools/schema.sql`
-
----
-
-For complete integration examples, see [MYSQL_INTEGRATION.md](MYSQL_INTEGRATION.md) and [RAG_EXAMPLE.md](RAG_EXAMPLE.md).
+The historical MySQL examples have not been redesigned for this contract. In particular, `tools/search.tcl` probes availability with a zero vector, which now returns NULL, and older examples use native-endian `binary format f*`. Review and update those consumers before using them with this UDF. See [MYSQL_INTEGRATION.md](MYSQL_INTEGRATION.md) and [RAG_EXAMPLE.md](RAG_EXAMPLE.md) as illustrative material, not validated integration tests.

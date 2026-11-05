@@ -1,5 +1,7 @@
 # RAG (Retrieval-Augmented Generation) Example
 
+> This legacy example requires review before use with the current UDF. See [MYSQL_UDF.md](MYSQL_UDF.md) for the vector format, error contract and limited isolated-server validation.
+
 Complete working example of using tclembedding with MySQL for semantic search and knowledge retrieval.
 
 ## What is RAG?

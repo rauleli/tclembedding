@@ -1,202 +1,125 @@
-/*
- * rag_optimizations.c - MySQL UDF for SIMD-optimized Cosine Similarity
- * High-performance vector similarity calculation for RAG applications
- *
- * Features:
- * - AVX2 acceleration with FMA (Fused Multiply-Add) for modern CPUs
- * - SSE4.1 fallback for older x86_64 systems
- * - Scalar fallback for maximum portability
- * - Efficient horizontal SIMD reductions
- * - Flexible vector dimension handling
- *
- * COMPILATION:
- * gcc -O3 -march=native -ffast-math -fno-math-errno -flto \
- *     -shared -fPIC \
- *     -o udf_cosine_similarity.so rag_optimizations.c \
- *     -I/usr/include/mysql -lm
- *
- * INSTALLATION:
- * sudo cp udf_cosine_similarity.so /usr/lib/mysql/plugin/
- *
- * MYSQL REGISTRATION:
- * CREATE FUNCTION cosine_similarity RETURNS REAL SONAME 'udf_cosine_similarity.so';
- *
- * USAGE:
- * SELECT cosine_similarity(embedding1, embedding2) FROM vectors;
- *
+/* MySQL cosine UDF: little-endian IEEE 754 float32 vectors.
+ * Compile without fast-math. SSE2 is opt-in at compile time; the binary must
+ * be deployed to CPUs that support every instruction used by the build.
  * Copyright (c) 2024
  * License: MIT
  */
-
-#include <mysql.h>
+#include <stdint.h>
+#include <stddef.h>
 #include <string.h>
 #include <math.h>
 #include <float.h>
-#include <immintrin.h>
-
-/* MySQL 8.0 compatibility - my_bool was removed */
-#ifndef my_bool
-typedef char my_bool;
+#include <limits.h>
+#if defined(__FAST_MATH__) || (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ > 0)
+#error "cosine_similarity requires non-finite checks; disable fast-math"
 #endif
-
-/* =========================
-   Horizontal SIMD Reductions
-   ========================= */
-
-static inline float hsum_sse(__m128 v) {
-    __m128 shuf = _mm_movehdup_ps(v);
-    __m128 sums = _mm_add_ps(v, shuf);
-    shuf = _mm_movehl_ps(shuf, sums);
-    sums = _mm_add_ss(sums, shuf);
-    return _mm_cvtss_f32(sums);
-}
-
-#ifdef __AVX2__
-static inline float hsum_avx(__m256 v) {
-    __m128 vlow  = _mm256_castps256_ps128(v);
-    __m128 vhigh = _mm256_extractf128_ps(v, 1);
-    vlow = _mm_add_ps(vlow, vhigh);
-    return hsum_sse(vlow);
-}
+#if !defined(COSINE_STANDALONE)
+#include <mysql.h>
+#include <stdbool.h>
 #endif
-
-/* =========================
-   SIMD Implementations
-   ========================= */
-
-#ifdef __AVX2__
-static float cosine_sim_avx(const float *a, const float *b, int n) {
-    __m256 dot_v = _mm256_setzero_ps();
-    __m256 ma2_v = _mm256_setzero_ps();
-    __m256 mb2_v = _mm256_setzero_ps();
-
-    int i = 0;
-    for (; i <= n - 8; i += 8) {
-        __m256 av = _mm256_loadu_ps(a + i);
-        __m256 bv = _mm256_loadu_ps(b + i);
-        dot_v = _mm256_fmadd_ps(av, bv, dot_v);
-        ma2_v = _mm256_fmadd_ps(av, av, ma2_v);
-        mb2_v = _mm256_fmadd_ps(bv, bv, mb2_v);
-    }
-
-    float dot = hsum_avx(dot_v);
-    float ma2 = hsum_avx(ma2_v);
-    float mb2 = hsum_avx(mb2_v);
-
-    for (; i < n; i++) {
-        dot += a[i] * b[i];
-        ma2 += a[i] * a[i];
-        mb2 += b[i] * b[i];
-    }
-
-    if (ma2 <= FLT_MIN || mb2 <= FLT_MIN)
-        return 0.0f;
-
-    return dot / (sqrtf(ma2) * sqrtf(mb2));
-}
-#endif
-
-#ifdef __SSE4_1__
-static float cosine_sim_sse(const float *a, const float *b, int n) {
-    __m128 dot_v = _mm_setzero_ps();
-    __m128 ma2_v = _mm_setzero_ps();
-    __m128 mb2_v = _mm_setzero_ps();
-
-    int i = 0;
-    for (; i <= n - 4; i += 4) {
-        __m128 av = _mm_loadu_ps(a + i);
-        __m128 bv = _mm_loadu_ps(b + i);
-        dot_v = _mm_add_ps(dot_v, _mm_mul_ps(av, bv));
-        ma2_v = _mm_add_ps(ma2_v, _mm_mul_ps(av, av));
-        mb2_v = _mm_add_ps(mb2_v, _mm_mul_ps(bv, bv));
-    }
-
-    float dot = hsum_sse(dot_v);
-    float ma2 = hsum_sse(ma2_v);
-    float mb2 = hsum_sse(mb2_v);
-
-    for (; i < n; i++) {
-        dot += a[i] * b[i];
-        ma2 += a[i] * a[i];
-        mb2 += b[i] * b[i];
-    }
-
-    if (ma2 <= FLT_MIN || mb2 <= FLT_MIN)
-        return 0.0f;
-
-    return dot / (sqrtf(ma2) * sqrtf(mb2));
-}
-#endif
-
-/* =========================
-   Main Selector
-   ========================= */
-
-static inline float calculate_cosine(const float *a, const float *b, int n) {
-    if (a == b)
-        return 1.0f;
-
-#ifdef __AVX2__
-    return cosine_sim_avx(a, b, n);
-#elif defined(__SSE4_1__)
-    return cosine_sim_sse(a, b, n);
+#if defined(COSINE_ENABLE_SSE2) && defined(__SSE2__) && (defined(__i386__) || defined(__x86_64__)) && !defined(COSINE_FORCE_SCALAR)
+#include <emmintrin.h>
+#include <xmmintrin.h>
+#define COSINE_SSE2 1
 #else
-    float dot = 0.0f, ma2 = 0.0f, mb2 = 0.0f;
-    for (int i = 0; i < n; i++) {
-        dot += a[i] * b[i];
-        ma2 += a[i] * a[i];
-        mb2 += b[i] * b[i];
-    }
-    if (ma2 <= FLT_MIN || mb2 <= FLT_MIN)
-        return 0.0f;
-    return dot / (sqrtf(ma2) * sqrtf(mb2));
+#define COSINE_SSE2 0
 #endif
+
+_Static_assert(CHAR_BIT == 8 && sizeof(float) == 4 && FLT_RADIX == 2 &&
+               FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128,
+               "IEEE 754 binary32 floats are required");
+
+/* Decode bytes explicitly; no alignment or host byte-order assumptions. */
+static float read_float32_le(const unsigned char *p) {
+    uint32_t bits = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                    ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    float value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
 }
 
-/* =========================
-   MySQL UDF Interface
-   ========================= */
+/* Returns 1 for valid input and sets output; otherwise returns 0. */
+static int cosine_le(const unsigned char *a, const unsigned char *b,
+                     size_t bytes_a, size_t bytes_b, double *output) {
+    if (!a || !b || !output || bytes_a == 0 || bytes_a != bytes_b || bytes_a % 4 != 0) return 0;
+    size_t n = bytes_a / 4, i = 0;
+    double dot = 0.0, aa = 0.0, bb = 0.0;
+#if COSINE_SSE2
+    __m128d dot0 = _mm_setzero_pd(), dot1 = _mm_setzero_pd();
+    __m128d aa0 = _mm_setzero_pd(), aa1 = _mm_setzero_pd();
+    __m128d bb0 = _mm_setzero_pd(), bb1 = _mm_setzero_pd();
+    for (; n - i >= 4; i += 4) {
+        float av[4], bv[4];
+        for (size_t j = 0; j < 4; j++) {
+            av[j] = read_float32_le(a + 4 * (i + j));
+            bv[j] = read_float32_le(b + 4 * (i + j));
+            if (!isfinite(av[j]) || !isfinite(bv[j])) return 0;
+        }
+        __m128 va = _mm_loadu_ps(av), vb = _mm_loadu_ps(bv);
+        __m128d a0 = _mm_cvtps_pd(va), b0 = _mm_cvtps_pd(vb);
+        __m128d a1 = _mm_cvtps_pd(_mm_movehl_ps(va, va));
+        __m128d b1 = _mm_cvtps_pd(_mm_movehl_ps(vb, vb));
+        dot0 = _mm_add_pd(dot0, _mm_mul_pd(a0, b0));
+        dot1 = _mm_add_pd(dot1, _mm_mul_pd(a1, b1));
+        aa0 = _mm_add_pd(aa0, _mm_mul_pd(a0, a0));
+        aa1 = _mm_add_pd(aa1, _mm_mul_pd(a1, a1));
+        bb0 = _mm_add_pd(bb0, _mm_mul_pd(b0, b0));
+        bb1 = _mm_add_pd(bb1, _mm_mul_pd(b1, b1));
+    }
+    double temp[2];
+    _mm_storeu_pd(temp, _mm_add_pd(dot0, dot1)); dot = temp[0] + temp[1];
+    _mm_storeu_pd(temp, _mm_add_pd(aa0, aa1)); aa = temp[0] + temp[1];
+    _mm_storeu_pd(temp, _mm_add_pd(bb0, bb1)); bb = temp[0] + temp[1];
+#endif
+    for (; i < n; i++) {
+        double x = read_float32_le(a + 4 * i), y = read_float32_le(b + 4 * i);
+        if (!isfinite(x) || !isfinite(y)) return 0;
+        dot += x * y; aa += x * x; bb += y * y;
+    }
+    if (!isfinite(dot) || !isfinite(aa) || !isfinite(bb) || aa <= 0.0 || bb <= 0.0) return 0;
+    double result = (dot / sqrt(aa)) / sqrt(bb);
+    if (!isfinite(result)) return 0;
+    *output = result;
+    return 1;
+}
 
-my_bool cosine_similarity_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
-    if (args->arg_count != 2 ||
-        args->arg_type[0] != STRING_RESULT ||
-        args->arg_type[1] != STRING_RESULT) {
-        strcpy(message, "cosine_similarity() requires two float32 blobs");
+#ifndef COSINE_STANDALONE
+/* MySQL 8 uses bool; MariaDB and older MySQL headers expose my_bool. */
+#if defined(MARIADB_BASE_VERSION) || (defined(MYSQL_VERSION_ID) && MYSQL_VERSION_ID < 80000)
+typedef my_bool cosine_init_result;
+typedef char cosine_flag_type;
+#else
+typedef bool cosine_init_result;
+typedef unsigned char cosine_flag_type;
+#endif
+cosine_init_result cosine_similarity_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
+    if (!initid || !args || args->arg_count != 2 || !args->arg_type ||
+        args->arg_type[0] != STRING_RESULT || args->arg_type[1] != STRING_RESULT) {
+        strcpy(message, "cosine_similarity requires two float32 little-endian blobs");
         return 1;
     }
-
     initid->maybe_null = 1;
+    /* MySQL uses 31 to indicate an unspecified number of decimal places. */
+    initid->decimals = 31;
     return 0;
 }
 
-double cosine_similarity(UDF_INIT *initid, UDF_ARGS *args,
-                          char *is_null, char *error) {
-    if (!args->args[0] || !args->args[1]) {
-        *is_null = 1;
-        return 0.0;
+double cosine_similarity(UDF_INIT *initid, UDF_ARGS *args, cosine_flag_type *is_null, cosine_flag_type *error) {
+    (void)initid;
+    *is_null = 0;
+    if (!args || args->arg_count != 2 || !args->args || !args->lengths) {
+        *error = 1; return 0.0;
     }
-
-    /* Strict logical alignment validation */
-    if ((args->lengths[0] % sizeof(float)) != 0 ||
-        (args->lengths[1] % sizeof(float)) != 0) {
-        *error = 1;
-        return 0.0;
+    if (!args->args[0] || !args->args[1]) { *is_null = 1; return 0.0; }
+#if ULONG_MAX > SIZE_MAX
+    if (args->lengths[0] > SIZE_MAX || args->lengths[1] > SIZE_MAX) { *is_null = 1; return 0.0; }
+#endif
+    double result;
+    if (!cosine_le((const unsigned char *)args->args[0], (const unsigned char *)args->args[1],
+                   (size_t)args->lengths[0], (size_t)args->lengths[1], &result)) {
+        *is_null = 1; return 0.0;
     }
-
-    int n1 = args->lengths[0] / sizeof(float);
-    int n2 = args->lengths[1] / sizeof(float);
-    int n  = (n1 < n2) ? n1 : n2;
-
-    if (n <= 0) {
-        *is_null = 1;
-        return 0.0;
-    }
-
-    return (double)calculate_cosine(
-        (const float *)args->args[0],
-        (const float *)args->args[1],
-        n
-    );
+    return result;
 }
-
-void cosine_similarity_deinit(UDF_INIT *initid) {}
+void cosine_similarity_deinit(UDF_INIT *initid) { (void)initid; }
+#endif

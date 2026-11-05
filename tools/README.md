@@ -1,5 +1,7 @@
 # Tools Directory - MySQL Integration Examples
 
+> These legacy scripts require review before use with the current UDF. See [MYSQL_UDF.md](../docs/MYSQL_UDF.md) for its vector format, error contract and limited isolated-server validation.
+
 This directory contains example scripts demonstrating the integration of tclembedding with MySQL for semantic search and RAG (Retrieval-Augmented Generation) applications.
 
 ## Files Overview
