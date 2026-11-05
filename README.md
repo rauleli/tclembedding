@@ -311,6 +311,7 @@ The existing autoconf templates require separately supplied TEA macros. Cross-pl
 - [TEA_SETUP.md](docs/TEA_SETUP.md) - TEA build system details
 - [MYSQL_INTEGRATION.md](docs/MYSQL_INTEGRATION.md) - MySQL vector storage
 - [RAG_EXAMPLE.md](docs/RAG_EXAMPLE.md) - RAG implementation example
+- [In-memory semantic retrieval](examples/01-in-memory-rag/README.md) - Synthetic corpus and embeddings without a database or generative model
 - [CONVERSATION_EXTRACTION.md](docs/CONVERSATION_EXTRACTION.md) - Local ChatGPT conversation export preparation for a future RAG pipeline
 - [SECURITY.md](docs/SECURITY.md) - Security considerations
 

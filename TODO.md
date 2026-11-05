@@ -2,6 +2,8 @@
 
 This file records follow-up work identified during a fresh repository review on **2026-09-30**.
 
+The dated checklist below is a historical record, not a statement that all its observations remain current. Consult `ROADMAP.md`, `DECISIONS.md` and `CHARACTERIZATION.md` for subsequently accepted work and remaining limits.
+
 The current implementation already performs useful ONNX inference, but correctness and lifecycle assumptions must be revalidated before performance work, broader model claims or new RAG features are promoted into active development.
 
 ## Working method
@@ -107,6 +109,8 @@ Promote one of these ideas into active work only when all of the following exist
 - [ ] **Latency/scaling benchmarking.** Characterize `cosine_similarity` from small datasets through large datasets only with a reproducible corpus and database configuration; do not assume results from one CPU represent other supported hosts.
 
 ### Personal conversation/document RAG reference example
+
+- [ ] **TCLllama generation in Example 04:** Evaluate it as an alternative after TCLllama provides an appropriate, validated generation interface. The initial end-to-end example is planned for Ollama; this item does not authorize implementation.
 
 - [ ] **Reference application:** Provide a reusable `examples/personal_rag/` example for user-supplied conversation exports and documents. Demonstrate ingestion, source identifiers, timestamps, message context, embeddings, and evidence-backed retrieval. See [docs/PERSONAL_RAG.md](docs/PERSONAL_RAG.md).
 - [ ] **SQLite backend:** Add SQLite storage and similarity retrieval alongside the existing MySQL examples, keeping embedding inference independent of the SQL engine.
