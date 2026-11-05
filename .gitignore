@@ -26,3 +26,11 @@ venv/
 *.pt
 *.pth
 *.bin
+
+# Databases and SQLite sidecars created for the persistent retrieval example
+/examples/02-persistent-rag/*.db
+/examples/02-persistent-rag/*.db-*
+/examples/02-persistent-rag/*.sqlite
+/examples/02-persistent-rag/*.sqlite-*
+/examples/02-persistent-rag/*.sqlite3
+/examples/02-persistent-rag/*.sqlite3-*

@@ -7,7 +7,7 @@ This map identifies dependencies and possible work; it does not authorize new sl
 These examples consume the public library; they are separate from the native binding slices and do not themselves authorize changes to the binding.
 
 1. **In-memory semantic retrieval:** a small synthetic corpus, embeddings and ranked retrieval. Formally accepted within the documented model, inputs and tested environment.
-2. **Persistent semantic retrieval:** extend retrieval with storage; the choice between SQLite, MySQL or another option remains open.
+2. **Persistent semantic retrieval:** extend retrieval with SQLite storage. Formally accepted within the documented model, inputs and tested environment.
 3. **ChatGPT conversation export:** prepare conversation text and provenance using `rl_json`. The existing extraction tool is separate from retrieval and does not implement a complete RAG pipeline.
 4. **End-to-end RAG:** combine these capabilities with generation, initially using Ollama. The first three examples do not depend on a generative LLM.
 
