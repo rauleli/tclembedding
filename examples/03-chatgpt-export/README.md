@@ -193,3 +193,9 @@ integrity checks, and a deterministic repeat. The script creates temporary
 synthetic JSONL files under `TMPDIR` or `/tmp`; interrupted runs can leave
 those files. Other model settings used in the characterization are laboratory
 configurations, not additional accepted public interfaces.
+
+## Resumable embeddings
+
+A separate [E5 embedding pipeline](EMBEDDING_PIPELINE.md) consumes version 2
+fragments and writes a verified float32 binary file with resumable checkpoints.
+It does not change fragmentation or implement SQL ingestion or search.
