@@ -90,7 +90,7 @@ proc ::mysql_store::ingest {fragments vectors} {
         puts "corpus=$corpus records=$count existing=$exists"
     } finally {close $jf; close $vf}
 }
-proc ::mysql_store::query {corpus model tokenizer text topk} {
+proc ::mysql_store::query_results {corpus model tokenizer text topk} {
     if {![regexp {^[0-9a-f]{64}$} $corpus] || [string trim $text] eq "" || ![string is integer -strict $topk] || $topk < 1 || $topk > 256} {error "invalid query"}
     if {[::pipeline::file_hash $model] ne $::pipeline::model_hash || [::pipeline::file_hash $tokenizer] ne $::pipeline::tokenizer_hash} {error "artifact hash mismatch"}
     check; check_udf
@@ -113,15 +113,19 @@ proc ::mysql_store::query {corpus model tokenizer text topk} {
         foreach row [lrange $rows 0 [expr {$topk-1}]] {
             if {[string length [lindex $row 5]] != 1536 || [::pipeline::digest [lindex $row 5]] ne [lindex $row 4] || [::pipeline::digest [lindex $row 1]] ne [lindex $row 3]} {error "corrupt stored vector or fragment"}
         }
-        set k 0
+        set k 0; set hits {}
         foreach row $rows {
             if {$k < $topk} {
                 set line [encoding convertfrom utf-8 [lindex $row 1]]
-                puts [list [lindex $row 2] [lindex $row 0] [json get $line text] [json get $line input_source_id] [json get $line input_sha256] [json get $line source] [json get $line conversation_id] [json get $line node_id] [json get $line message_id] [json get $line role] [json get $line position] [json extract $line create_time] [json get $line part] [json get $line fragment_index] [json get $line char_start] [json get $line char_end] intfloat/multilingual-e5-small]
+                lappend hits [list [lindex $row 2] [lindex $row 0] [json get $line text] [json get $line input_source_id] [json get $line input_sha256] [json get $line source] [json get $line conversation_id] [json get $line node_id] [json get $line message_id] [json get $line role] [json get $line position] [json extract $line create_time] [json get $line part] [json get $line fragment_index] [json get $line char_start] [json get $line char_end] intfloat/multilingual-e5-small]
             }
             incr k
         }
+        return $hits
     } finally {try {if {$handle ne ""} {embedding::free $handle}} finally {if {$loaded} {tokenizer::free}}}
+}
+proc ::mysql_store::query {corpus model tokenizer text topk} {
+    foreach hit [query_results $corpus $model $tokenizer $text $topk] {puts $hit}
 }
 if {[file normalize $argv0] eq [file normalize [info script]]} {
     if {[catch {

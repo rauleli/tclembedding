@@ -135,7 +135,7 @@ proc ::store::retrieve {corpus vector topk} {
     return $hits
 }
 proc ::store::compare_wrapped {a b} {return [compare [lindex $a 0] [lindex $b 0]]}
-proc ::store::query {path corpus model tokenizer text topk} {
+proc ::store::query_results {path corpus model tokenizer text topk} {
     if {[string trim $text] eq ""} {error "empty query"}
     if {[::pipeline::file_hash $model] ne $::pipeline::model_hash || [::pipeline::file_hash $tokenizer] ne $::pipeline::tokenizer_hash} {error "model or tokenizer hash mismatch"}
     package require tokenizer 1.0.0; package require tclembedding 1.0
@@ -148,8 +148,11 @@ proc ::store::query {path corpus model tokenizer text topk} {
         set packed [::pipeline::vector_blob [embedding::compute $handle $ids -pooling mean]]
         binary scan $packed r* vector
         open_db $path 0
-        try {check_schema; foreach hit [retrieve $corpus $vector $topk] {puts $hit}} finally {db close}
+        try {check_schema; return [retrieve $corpus $vector $topk]} finally {db close}
     } finally {try {if {$handle ne ""} {embedding::free $handle}} finally {if {$loaded} {tokenizer::free}}}
+}
+proc ::store::query {path corpus model tokenizer text topk} {
+    foreach hit [query_results $path $corpus $model $tokenizer $text $topk] {puts $hit}
 }
 if {[file normalize $argv0] eq [file normalize [info script]]} {
     if {[catch {
