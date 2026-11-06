@@ -6,6 +6,16 @@ A high-performance Tcl extension for generating text embeddings using ONNX Runti
 
 `tclembedding` provides Tcl bindings for tokenization and ONNX inference. The tokenizer loads a complete Hugging Face `tokenizer.json`; model compatibility depends on the tokenizer and ONNX signature and must be verified for each model.
 
+### Why Tcl?
+
+It all started with Eggdrop bots in the '90s. Things got a little out of hand.
+
+Thirty years later, I'm still using it to connect databases, automate industrial systems, build ERPs, run distributed workers, and integrate AI models.
+
+Some of that code has been running unchanged for seven years.
+
+At this point, switching languages would be the experimental choice.
+
 ## Requirements
 
 - **Tcl 8.6 or higher**
