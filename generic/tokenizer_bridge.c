@@ -50,7 +50,7 @@ static int LoadCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const
     return TCL_OK;
 }
 
-static int EncodeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+static int EncodeCommon(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[], int details_mode) {
     TokenizerState *state = (TokenizerState *)data;
     Tcl_WideInt limit = 0;
     Tcl_DString bytes;
@@ -58,6 +58,7 @@ static int EncodeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *con
     int length;
     const char *text;
     uint32_t *ids = NULL;
+    hf_token_detail *details = NULL;
     size_t count = 0;
     char *error = NULL;
     if (objc != 2 && objc != 4) { Tcl_WrongNumArgs(interp, 1, objv, "text ?-max-length count?"); return TCL_ERROR; }
@@ -87,23 +88,48 @@ static int EncodeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *con
     if (!utf8) return TCL_ERROR;
     Tcl_UtfToExternalDString(utf8, text, length, &bytes);
     Tcl_FreeEncoding(utf8);
-    if (hf_encode(state->handle, (const uint8_t *)Tcl_DStringValue(&bytes),
-                  (size_t)Tcl_DStringLength(&bytes), (size_t)limit, &ids, &count, &error)) {
+    int status = details_mode
+        ? hf_encode_details(state->handle, (const uint8_t *)Tcl_DStringValue(&bytes),
+                            (size_t)Tcl_DStringLength(&bytes), (size_t)limit, &details, &count, &error)
+        : hf_encode(state->handle, (const uint8_t *)Tcl_DStringValue(&bytes),
+                    (size_t)Tcl_DStringLength(&bytes), (size_t)limit, &ids, &count, &error);
+    if (status) {
         Tcl_DStringFree(&bytes); return BackendError(interp, error);
     }
     Tcl_DStringFree(&bytes);
-    if (count > INT_MAX) { hf_ids_free(ids, count); Tcl_SetObjResult(interp, Tcl_NewStringObj("too many token IDs", -1)); return TCL_ERROR; }
+    if (count > INT_MAX) { if (details_mode) hf_details_free(&details, &count); else hf_ids_free(ids, count); Tcl_SetObjResult(interp, Tcl_NewStringObj("too many token IDs", -1)); return TCL_ERROR; }
     Tcl_Obj *result = Tcl_NewListObj(0, NULL);
     Tcl_IncrRefCount(result);
     for (size_t i = 0; i < count; i++) {
-        if (Tcl_ListObjAppendElement(interp, result, Tcl_NewWideIntObj((Tcl_WideInt)ids[i])) != TCL_OK) {
-            hf_ids_free(ids, count); Tcl_DecrRefCount(result); return TCL_ERROR;
+        Tcl_Obj *item;
+        if (details_mode) {
+            if (details[i].byte_start > INT64_MAX || details[i].byte_end > INT64_MAX) {
+                hf_details_free(&details, &count); Tcl_DecrRefCount(result);
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("token offset too large", -1)); return TCL_ERROR;
+            }
+            Tcl_Obj *fields[6] = {
+                Tcl_NewWideIntObj(details[i].id), Tcl_NewWideIntObj((Tcl_WideInt)details[i].byte_start),
+                Tcl_NewWideIntObj((Tcl_WideInt)details[i].byte_end), Tcl_NewWideIntObj(details[i].special_mask),
+                Tcl_NewWideIntObj(details[i].attention_mask), Tcl_NewWideIntObj(details[i].type_id)
+            };
+            item = Tcl_NewListObj(6, fields);
+        } else item = Tcl_NewWideIntObj((Tcl_WideInt)ids[i]);
+        if (Tcl_ListObjAppendElement(interp, result, item) != TCL_OK) {
+            if (details_mode) hf_details_free(&details, &count); else hf_ids_free(ids, count);
+            Tcl_DecrRefCount(result); return TCL_ERROR;
         }
     }
-    hf_ids_free(ids, count);
+    if (details_mode) hf_details_free(&details, &count); else hf_ids_free(ids, count);
     Tcl_SetObjResult(interp, result);
     Tcl_DecrRefCount(result);
     return TCL_OK;
+}
+
+static int EncodeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+    return EncodeCommon(data, interp, objc, objv, 0);
+}
+static int EncodeDetailsCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
+    return EncodeCommon(data, interp, objc, objv, 1);
 }
 
 static int FreeCmd(ClientData data, Tcl_Interp *interp, int objc, Tcl_Obj *const objv[]) {
@@ -123,6 +149,7 @@ int Tcltokenizer_Init(Tcl_Interp *interp) {
     Tcl_SetAssocData(interp, "tclembedding.tokenizer", StateDelete, state);
     Tcl_CreateObjCommand(interp, "::tokenizer::load_vocab", LoadCmd, state, NULL);
     Tcl_CreateObjCommand(interp, "::tokenizer::tokenize", EncodeCmd, state, NULL);
+    Tcl_CreateObjCommand(interp, "::tokenizer::encode_details", EncodeDetailsCmd, state, NULL);
     Tcl_CreateObjCommand(interp, "::tokenizer::free", FreeCmd, state, NULL);
     if (Tcl_PkgProvide(interp, "tclembedding::tokenizer", "1.0.0") != TCL_OK) return TCL_ERROR;
     return Tcl_PkgProvide(interp, "tokenizer", "1.0.0");

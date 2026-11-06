@@ -2,6 +2,24 @@
 
 ## Native dependency comparison
 
+For byte-offset characterization, use the four tokenizer JSON files and their
+hashes identified in `CHARACTERIZATION.md`. The following standalone Tcl test
+does not require an ONNX model. The Rust byte/character comparison uses
+`TOKENIZER_JSON` for MiniLM and, when supplied, `TOKENIZER_EXTRA_JSONS` as a
+platform path list containing BGE, E5 and MPNet, in that order.
+
+```bash
+TCLLIBPATH="$build_dir/unix" tclsh tests/tokenizer_details_test.tcl "$MINILM_TOKENIZER" "$BGE_TOKENIZER" "$E5_TOKENIZER" "$MPNET_TOKENIZER"
+TOKENIZER_JSON="$MINILM_TOKENIZER" TOKENIZER_EXTRA_JSONS="$BGE_TOKENIZER:$E5_TOKENIZER:$MPNET_TOKENIZER" cargo test --release --locked --manifest-path tokenizer-native/Cargo.toml
+TCLLIBPATH="$build_dir/unix" tclsh tests/tokenizer_offsets_probe.tcl "$E5_TOKENIZER" 'passage: ' 128 normal 3
+TCLLIBPATH="$build_dir/unix" tclsh tests/tokenizer_offsets_probe.tcl "$BGE_TOKENIZER" '' 128 unknown 100
+```
+
+The last two commands compare the full existing fragmentation of a synthetic
+ASCII input with the proposal and validation of only its first boundary. They
+do not benchmark equivalent complete algorithms or establish correctness of
+offset-based fragmentation for Unicode or other inputs.
+
 The dependency update was measured against external, hash-identified model and tokenizer artifacts and previously captured synthetic vectors; see `CHARACTERIZATION.md` for the versions and scope. The small Tcl helpers below are laboratory checks, not production dependencies. `dependency_vector_compare.tcl` needs `rl_json` and a reference JSON containing `cases`, `ids` and `binding_vector`; check the model and reference provenance and hashes independently before running it. It compares every component and reports the maximum absolute error and minimum cosine across the stored vectors. `dependency_batch_compare.tcl` compares two synthetic sequences separately and in a padded batch. `dependency_token_ids.tcl` emits 25 ID/recovery records for byte-for-byte comparison; use the same tokenizer and prefix on both builds.
 
 ```bash

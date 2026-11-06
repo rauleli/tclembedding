@@ -47,6 +47,35 @@ int main(int argc, char **argv) {
     CHECK(hf_encode(h, nul_text, sizeof(nul_text), 0, &ids, &count, &err) == 0);
     CHECK(count == sizeof(expected)/sizeof(expected[0]) && memcmp(ids, expected, sizeof(expected)) == 0);
     hf_ids_free(ids, count);
+    hf_token_detail *details = NULL;
+    size_t detail_count = 0;
+    CHECK(sizeof(hf_token_detail) == 32);
+    CHECK(hf_encode_details(NULL, nul_text, sizeof(nul_text), 0, &details, &detail_count, &err) != 0);
+    CHECK(details == NULL && detail_count == 0 && err != NULL);
+    hf_error_free(err); err = NULL;
+    CHECK(hf_encode_details(h, nul_text, sizeof(nul_text), 0, NULL, &detail_count, &err) != 0);
+    CHECK(detail_count == 0 && err != NULL);
+    hf_error_free(err); err = NULL;
+    CHECK(hf_encode_details(h, nul_text, sizeof(nul_text), 0, &details, &detail_count, &err) == 0);
+    CHECK(detail_count == sizeof(expected)/sizeof(expected[0]));
+    for (size_t i = 0; i < detail_count; i++) {
+        CHECK(details[i].id == expected[i]);
+        CHECK(details[i].byte_start <= details[i].byte_end && details[i].byte_end <= sizeof(nul_text));
+        CHECK(details[i].attention_mask == 1 && details[i].type_id == 0);
+    }
+    CHECK(details[0].special_mask == 1 && details[0].byte_start == 0 && details[0].byte_end == 0);
+    hf_details_free(&details, &detail_count);
+    CHECK(details == NULL && detail_count == 0);
+    hf_details_free(&details, &detail_count);
+    CHECK(hf_encode_details(h, bad, sizeof(bad), 0, &details, &detail_count, &err) != 0);
+    CHECK(details == NULL && detail_count == 0 && err != NULL);
+    hf_error_free(err); err = NULL;
+    CHECK(hf_encode_details(h, (const uint8_t *)"hola", 4, 1, &details, &detail_count, &err) != 0);
+    CHECK(details == NULL && detail_count == 0 && err != NULL);
+    hf_error_free(err); err = NULL;
+    CHECK(hf_encode_details(h, (const uint8_t *)"hola", 4, 3, &details, &detail_count, &err) == 0);
+    CHECK(detail_count == 3 && details[2].special_mask == 1);
+    hf_details_free(&details, &detail_count);
     const char *texts[] = {"", "\xf0\x9f\xa6\x84", "cafe\xcc\x81"};
     const uint32_t expected_ids[][4] = {{0, 2, 0, 0}, {0, 6, 247874, 2}, {0, 26216, 2, 0}};
     const size_t expected_sizes[] = {2, 4, 3};

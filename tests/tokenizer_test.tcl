@@ -12,6 +12,12 @@ proc check {condition message} {
 check {[catch {tokenizer::tokenize hello}]} "tokenize before load must fail"
 check {[catch {tokenizer::free}]} "free before load must fail"
 tokenizer::load_vocab $model
+set details [tokenizer::encode_details "café 😀"]
+check {[lmap row $details {lindex $row 0}] eq [tokenizer::tokenize "café 😀"]} "detail IDs"
+check {[lrange [lindex $details 1] 1 2] eq {0 5}} "byte offsets"
+check {[lrange [lindex $details end] 1 3] eq {0 0 1}} "inserted special mask"
+check {[catch {tokenizer::encode_details hola -max-length 1}]} "detail limit error"
+check {[lmap row [tokenizer::encode_details hola] {lindex $row 0}] eq {0 739 143 2}} "detail recovery"
 set count 0
 foreach case $tokenizer_cases {
     lassign $case group limit hex expected
@@ -76,6 +82,7 @@ interp eval child [list set auto_path $auto_path]
 interp eval child {package require tokenizer 1.0.0}
 interp eval child [list tokenizer::load_vocab $model]
 check {[interp eval child {tokenizer::tokenize hola}] eq {0 739 143 2}} "child tokenizer failed"
+check {[interp eval child {lmap row [tokenizer::encode_details hola] {lindex $row 0}}] eq {0 739 143 2}} "child details failed"
 tokenizer::free
 check {[interp eval child {tokenizer::tokenize hola}] eq {0 739 143 2}} "parent free affected child"
 tokenizer::load_vocab $model

@@ -156,6 +156,14 @@ Tokenizes input text into a list of token IDs.
 
 The configuration supplies normalization, tokenization, added tokens and postprocessing. Errors are returned if loading or encoding fails.
 
+#### tokenizer::encode_details *text* ?-max-length *count*?
+
+Returns one positional list per token: `{id byte_start byte_end special_mask attention_mask type_id}`. IDs and truncation follow `tokenizer::tokenize`. Offsets are zero-based byte positions into the standard UTF-8 encoding of the supplied Tcl text; the end is exclusive. They are not Tcl string indices or grapheme offsets. Normalization, added tokens and the model's postprocessor can yield overlapping, noncontiguous or empty ranges, and offsets need not cover the input. Do not assume a byte offset is a Tcl character boundary.
+
+The masks and type IDs are returned directly by Hugging Face Tokenizers. A postprocessor-inserted special commonly has an empty range and mask 1, but a literal special token in the input can have a nonempty range and mask 0 even when its ID is special. A zero mask does not prove that an ID is ordinary. Padding is disabled by this binding; attention values are provided by the tokenizer and should not be inferred from IDs. No grapheme segmentation or universal alignment guarantee is implied.
+
+This additive command remains in package version `1.0.0` so existing exact package requirements continue to load. A future release may introduce coordinated versioning; callers that need this capability should also check for the command.
+
 #### tokenizer::free
 
 Releases the loaded tokenizer. It also runs automatically when the interpreter is deleted. Calling it without a loaded tokenizer returns an error.

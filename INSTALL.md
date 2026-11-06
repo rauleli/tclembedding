@@ -140,6 +140,13 @@ The launcher changes those variables only in its child process. Select an
 explicit interpreter path in the launcher if `PATH` does not reliably identify
 the validated Tcl 8.6 installation. It does not alter shell startup files.
 
+For the versioned installation that includes native token details, a launcher
+can be placed under a separate prefix such as
+`$HOME/.local/opt/tclembedding-details-0.23.2-ort-1.31.1/bin/tclembedding-tclsh`.
+Select the earlier prefix's launcher to return to the previous binding. Check
+for `tokenizer::encode_details` after loading the package, because the Tcl
+package version remains `1.0.0` for compatibility.
+
 ## Testing and limitations
 
 From the configured top-level build directory, run the complete suite with the exact external tokenizer and MiniLM ONNX fixtures identified by SHA-256 in `CHARACTERIZATION.md`. First prepare a new disposable directory for the small synthetic ONNX safety fixtures. The generator needs Python 3's standard library only; Python is not a production dependency. It exclusively creates its fixture files and refuses to overwrite them.
