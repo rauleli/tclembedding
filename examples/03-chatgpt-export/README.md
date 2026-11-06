@@ -199,3 +199,6 @@ configurations, not additional accepted public interfaces.
 A separate [E5 embedding pipeline](EMBEDDING_PIPELINE.md) consumes version 2
 fragments and writes a verified float32 binary file with resumable checkpoints.
 It does not change fragmentation or implement SQL ingestion or search.
+
+For independently selectable SQLite and MySQL storage and semantic retrieval,
+see [SQL_RETRIEVAL.md](SQL_RETRIEVAL.md).
