@@ -1,6 +1,6 @@
 # Installation instructions
 
-The configured Unix build was exercised with Tcl 8.6, ONNX Runtime 1.20.1, TEA 3.13 and the locked Rust tokenizer dependencies on Linux x86-64. Other Tcl/ONNX versions, platforms, full distribution packaging and offline dependency provisioning remain unverified. Python is not a production dependency.
+The configured Unix build was exercised with Tcl 8.6, ONNX Runtime 1.20.1, TEA 3.13 and the locked Rust tokenizer dependencies on Linux x86-64. Tokenizers 0.23.2 was subsequently tested on the same environment with ONNX Runtime 1.20.1 and, in an isolated experimental build, ONNX Runtime 1.31.1. The system runtime was not replaced. See `CHARACTERIZATION.md` for the tested scope; other Tcl/ONNX versions, platforms, full distribution packaging and offline dependency provisioning remain unverified. Python is not a production dependency.
 
 ## Prerequisites
 
@@ -38,6 +38,10 @@ make
 
 `autogen.sh` generates `configure` and `tea-aux/install-sh` in the current build directory, not the repository. It uses the supplied TEA macros and refuses to overwrite a different auxiliary installer. If TEA or the required crate sources are absent, supply them through an independently authorized process; the build does not silently retrieve them. The configured `unix/Makefile` builds separate C, Tcl bridge and Rust libraries. The current rules use Linux `.so` names and `$ORIGIN`; portability to other systems is not established.
 
+The Rust manifest fixes `tokenizers = "=0.23.2"`; `Cargo.lock` fixes the resolved transitive versions. Build with `--locked`, and prepare the corresponding crate sources in a controlled Cargo cache before using `CARGO_NET_OFFLINE=true`. The upstream [0.23.2 release](https://github.com/huggingface/tokenizers/releases/tag/v0.23.2) and [ONNX Runtime 1.31.1 release](https://github.com/microsoft/onnxruntime/releases/tag/v1.31.1) identify the evaluated upstream versions. The Rust crate and Python package have separate releases. Do not infer production Python dependencies from the historical reference procedures below.
+
+To evaluate an isolated ONNX Runtime distribution instead of the system package, supply its matching `include` and `lib` directories in `CPPFLAGS` and `LDFLAGS` when configuring, and ensure the runtime loader selects the same library, for example using an explicitly scoped `LD_LIBRARY_PATH`. Verify the actual loaded library and API version. The binding requests the `ORT_API_VERSION` defined by the headers used at compilation: an extension built with API 31 must not be assumed to work with a runtime exposing only API 20. The official Linux x86-64 1.31.1 archive tested here has SHA-256 `c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9`; verify it against upstream release metadata. This project does not bundle or install that runtime, and selection is still an external deployment choice.
+
 ### Source snapshot and Cargo cache
 
 A complete build snapshot must include `configure.ac`, `autogen.sh`, the root and `unix/Makefile.in` templates, `pkgIndex.tcl.in`, `generic/tclembedding.c`, `generic/tokenizer_bridge.c`, `tokenizer-native/Cargo.toml`, `Cargo.lock`, `hf_tokenizer.h`, and `tokenizer-native/src/lib.rs`. Include the applicable `tests/` files and their dependencies for verification. Genuine TEA `tcl.m4` and `install-sh`, crate sources, Tcl and ONNX Runtime are separate prerequisites, not part of the repository snapshot. A source archive based solely on `HEAD` is incomplete while required files remain untracked. Review all candidate files for privacy and completeness before creating a distributable archive; ignored files must not be included automatically.
@@ -73,6 +77,68 @@ TCL
 ```
 
 Tcl treats `tclembedding`'s reported `1.0` as equivalent to the index's `1.0.0`; the tokenizer packages report `1.0.0`. The `tcltokenizer` bridge locates its Rust library through `$ORIGIN`. Tcl, ONNX Runtime and the C/C++ runtime libraries remain external dependencies and must be discoverable by the system loader.
+
+### User-local Linux installation with a selected runtime
+
+A separate versioned prefix avoids replacing an existing installation. Obtain and verify the official ONNX Runtime archive and the genuine TEA files before these commands; do not substitute a library from another build. The example assumes paths without spaces and a previously prepared Cargo cache:
+
+```bash
+export project_dir=/path/to/tclembedding
+export prefix="$HOME/.local/opt/tclembedding-tokenizers-0.23.2-ort-1.31.1"
+export build_dir="$HOME/.cache/tclembedding-build/tokenizers-0.23.2-ort-1.31.1"
+export TEA_CONFIG_DIR=/path/to/tea-3.13
+export tcl_config_dir=/path/to/tcl/lib
+export ort_archive=/path/to/onnxruntime-linux-x64-1.31.1.tgz
+test ! -e "$prefix" && test ! -e "$build_dir"
+printf '%s  %s\n' c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9 "$ort_archive" | sha256sum -c
+mkdir -p "$prefix/ort" "$build_dir"
+tar -xzf "$ort_archive" -C "$prefix/ort" --strip-components=1
+cd "$build_dir"
+"$project_dir/autogen.sh"
+CPPFLAGS="-I$prefix/ort/include" \
+LDFLAGS="-L$prefix/ort/lib -Wl,-rpath,$prefix/ort/lib" \
+  ./configure --srcdir="$project_dir" --prefix="$prefix" --with-tcl="$tcl_config_dir"
+CARGO_NET_OFFLINE=true make
+make -s -C unix print-install-dir
+make -n install
+# Check the destination before continuing.
+CARGO_NET_OFFLINE=true make install
+```
+
+The absolute RUNPATH selects this versioned prefix without a process-wide or
+shell-wide `LD_LIBRARY_PATH` change. Moving the prefix requires rebuilding or
+otherwise updating its loader path. Verify the selected library with `ldd`,
+the header's `ORT_API_VERSION`, and a C API version/provider probe; a package
+load alone is not an inference test. Start a new Tcl process with
+`TCLLIBPATH="$prefix/lib/tclembedding1.0"` and run the identified fixture
+tests. `TCLLIBPATH` is a Tcl list; quote or construct it appropriately if
+paths contain spaces. A user-local launcher can set this variable for one
+process and invoke the desired Tcl 8.6 interpreter without modifying shell
+startup files. To return to an earlier installation, select its package path
+and runtime explicitly in a new process; the versioned prefix does not modify
+the earlier installation or system runtime.
+
+For example, create a launcher in the new prefix after confirming that
+`tclsh8.6` on `PATH` is the intended Tcl interpreter:
+
+```bash
+mkdir -p "$prefix/bin"
+cat > "$prefix/bin/tclembedding-tclsh" <<'SH'
+#!/bin/sh
+set -eu
+prefix=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+unset LD_LIBRARY_PATH
+TCLLIBPATH="$prefix/lib/tclembedding1.0"
+export TCLLIBPATH
+exec tclsh8.6 "$@"
+SH
+chmod 755 "$prefix/bin/tclembedding-tclsh"
+"$prefix/bin/tclembedding-tclsh" your-script.tcl
+```
+
+The launcher changes those variables only in its child process. Select an
+explicit interpreter path in the launcher if `PATH` does not reliably identify
+the validated Tcl 8.6 installation. It does not alter shell startup files.
 
 ## Testing and limitations
 

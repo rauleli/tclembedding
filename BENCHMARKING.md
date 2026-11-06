@@ -1,5 +1,19 @@
 # Verification and measurement procedures
 
+## Native dependency comparison
+
+The dependency update was measured against external, hash-identified model and tokenizer artifacts and previously captured synthetic vectors; see `CHARACTERIZATION.md` for the versions and scope. The small Tcl helpers below are laboratory checks, not production dependencies. `dependency_vector_compare.tcl` needs `rl_json` and a reference JSON containing `cases`, `ids` and `binding_vector`; check the model and reference provenance and hashes independently before running it. It compares every component and reports the maximum absolute error and minimum cosine across the stored vectors. `dependency_batch_compare.tcl` compares two synthetic sequences separately and in a padded batch. `dependency_token_ids.tcl` emits 25 ID/recovery records for byte-for-byte comparison; use the same tokenizer and prefix on both builds.
+
+```bash
+TCLLIBPATH="$build_a/unix" tclsh tests/dependency_token_ids.tcl "$TOKENIZER_JSON" "$DOCUMENT_PREFIX" > "$lab_dir/ids-a.txt"
+TCLLIBPATH="$build_b/unix" tclsh tests/dependency_token_ids.tcl "$TOKENIZER_JSON" "$DOCUMENT_PREFIX" > "$lab_dir/ids-b.txt"
+cmp "$lab_dir/ids-a.txt" "$lab_dir/ids-b.txt"
+TCLLIBPATH="$build_b/unix" tclsh tests/dependency_vector_compare.tcl "$MODEL_ONNX" "$REFERENCE_JSON" "$POOLING"
+TCLLIBPATH="$build_b/unix" tclsh tests/dependency_batch_compare.tcl "$TOKENIZER_JSON" "$MODEL_ONNX" "$PAD_ID" "$POOLING" "$DOCUMENT_PREFIX"
+```
+
+The C API version and the library actually selected by the loader must be recorded independently. In particular, a comparison against an ONNX client sharing the runtime is not an independent PyTorch comparison, and a cross-runtime numerical result is not a universal tolerance.
+
 Functional tests compare results; timing and memory observations characterize a specific environment. Previous results are not performance targets and must not be extrapolated to other machines.
 
 ## Reproducible functional tests
