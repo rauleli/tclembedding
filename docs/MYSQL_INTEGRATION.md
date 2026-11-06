@@ -123,8 +123,8 @@ Follow instructions in [MYSQL_UDF.md](MYSQL_UDF.md):
 
 ```bash
 cd src/
-gcc -shared -fPIC -march=native -O3 -msse3 -msse4a \
-  -o mysql_cosine_similarity.so rag_optimizations.c \
+gcc -std=c11 -shared -fPIC -O3 \
+  -o mysql_cosine_similarity.so rag_optimizations.c similarity.c \
   $(mysql_config --include) -lm
 
 sudo cp mysql_cosine_similarity.so /usr/lib/mysql/plugin/

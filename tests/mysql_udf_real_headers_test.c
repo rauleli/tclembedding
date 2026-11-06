@@ -1,4 +1,5 @@
 /* Direct ABI/type checks with actual MySQL headers; this is not an SQL test. */
+#include "../src/similarity.c"
 #include "../src/rag_optimizations.c"
 #include <dlfcn.h>
 #include <stdio.h>

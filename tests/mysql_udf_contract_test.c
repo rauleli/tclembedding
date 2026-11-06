@@ -1,4 +1,5 @@
 /* Unit test with synthetic UDF types, not a server integration test. */
+#include "../src/similarity.c"
 #include "../src/rag_optimizations.c"
 #include <stdio.h>
 #include <stdlib.h>

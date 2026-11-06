@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define COSINE_STANDALONE 1
-#include "../src/rag_optimizations.c"
+#include "../src/similarity.c"
+#define cosine_le similarity_cosine_f32le
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -31,6 +32,8 @@ int main(void) {
     put32(b,-1.0f); put32(b+4,0.0f);
     check(cosine_le(a,b,8,8,&actual) && fabs(actual+1) < 1e-12, "opposite");
     put32(a,-2.0f); put32(a+4,3.0f); put32(b,4.0f); put32(b+4,-5.0f);
+    check(similarity_dot_f32le(a,b,8,8,&actual) && actual == -23.0, "dot product");
+    check(!similarity_dot_f32le(a,b,8,4,&actual), "dot length mismatch");
     av[0]=-2; av[1]=3; bv[0]=4; bv[1]=-5;
     check(cosine_le(a,b,8,8,&actual) && fabsl(actual-reference(av,bv,2)) < 1e-12L, "negative values");
     check(!cosine_le(a,b,8,4,&actual), "different dimensions");
@@ -38,8 +41,13 @@ int main(void) {
     check(!cosine_le(a,b,0,0,&actual), "empty blobs");
     check(!cosine_le(NULL,b,4,4,&actual), "null pointer");
     put32(a,0.0f); put32(a+4,0.0f);
+    check(similarity_dot_f32le(a,a,8,8,&actual) && actual == 0.0, "zero dot product");
     check(!cosine_le(a,a,8,8,&actual), "same zero pointer");
     const unsigned char nan32[] = {0,0,0xc0,0x7f}, inf32[] = {0,0,0x80,0x7f};
+    actual = 123.0;
+    check(!similarity_dot_f32le(nan32,nan32,4,4,&actual) && actual == 123.0, "dot rejects NaN without changing output");
+    check(!similarity_dot_f32le(inf32,inf32,4,4,&actual), "dot rejects infinity");
+    check(!similarity_dot_f32le(inf32,inf32,4,4,NULL), "dot rejects null output");
     check(!cosine_le(nan32,nan32,4,4,&actual), "same NaN pointer");
     check(!cosine_le(inf32,inf32,4,4,&actual), "infinity");
     const unsigned char one[] = {0,0,0x80,0x3f};

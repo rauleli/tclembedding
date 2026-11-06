@@ -1,6 +1,9 @@
 # MySQL cosine similarity UDF
 
-`src/rag_optimizations.c` provides `cosine_similarity` for two binary vectors. It is independent of the ONNX and tokenizer bindings. The standalone numeric tests described here do not establish MySQL or MariaDB server integration.
+`src/rag_optimizations.c` provides `cosine_similarity` for two binary vectors and uses the independent kernel in `src/similarity.c`. It is independent of the ONNX and tokenizer bindings. Standalone numeric tests alone do not establish server integration; isolated MySQL results are described below.
+
+For the shared kernel API, SQLite extension and cross-engine characterization,
+see [SIMILARITY_KERNEL.md](SIMILARITY_KERNEL.md).
 
 ## Input and output contract
 
@@ -27,7 +30,7 @@ Use a C11 compiler and development headers matching the target MySQL or MariaDB 
 
 ```sh
 cc -std=c11 -O3 -fPIC -shared $(mysql_config --include) \
-  src/rag_optimizations.c -o mysql_cosine_similarity.so -lm
+  src/rag_optimizations.c src/similarity.c -o mysql_cosine_similarity.so -lm
 ```
 
 Do not use `-ffast-math` or `-ffinite-math-only`: the source rejects these options because they undermine NaN and infinity validation. Do not assume a library built for one server version is ABI-compatible with another. MySQL 8 uses a `bool` UDF initialization result and unsigned-byte status pointers; MariaDB and older MySQL headers use `my_bool` and char status pointers. The source selects types from the headers. MySQL 8.4.10 header types, direct library calls and isolated server invocation passed; MariaDB headers and server invocation remain unverified.
@@ -85,7 +88,7 @@ cc -std=c11 -O3 -Wall -Wextra -Werror -fPIC -shared $(mysql_config --include) \
   -Dcosine_similarity=cosine_similarity_v2 \
   -Dcosine_similarity_init=cosine_similarity_v2_init \
   -Dcosine_similarity_deinit=cosine_similarity_v2_deinit \
-  src/rag_optimizations.c -o "$LAB_DIR/plugins/mysql_cosine_v2.so" -lm
+  src/rag_optimizations.c src/similarity.c -o "$LAB_DIR/plugins/mysql_cosine_v2.so" -lm
 mysqld --no-defaults --initialize-insecure --basedir=/usr \
   --datadir="$LAB_DIR/data" --tmpdir="$LAB_DIR/tmp" \
   --plugin-dir="$LAB_DIR/plugins" --log-error="$LAB_DIR/init.log"
