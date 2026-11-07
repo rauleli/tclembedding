@@ -21,9 +21,8 @@ history. Example 03 supplies those separate preparation stages.
 
 The E5 artifact hashes and model revision are checked by the existing retrieval
 adapters. They tokenize `query: ` without silent truncation and apply mean
-pooling. MySQL uses the L-3 UDF. SQLite currently uses the existing Tcl scalar
-reference; using its native extension without duplicating the accepted retrieval
-logic remains future work. The normal Example 03 CLI and query results are
+pooling. MySQL uses the L-3 UDF. SQLite defaults to the existing Tcl scalar
+reference and can explicitly use the L-3 native extension. The normal Example 03 CLI and query results are
 unchanged. New `query_results` procedures return their existing 17-field rows.
 
 ## Run
@@ -109,6 +108,72 @@ not report a length termination; this does not establish why the model omitted
 the citation.
 
 See `SQL_RETRIEVAL.md` in Example 03 for ingestion, backend
-integrity, and query limitations. Future 04-B work may evaluate native SQLite
-retrieval, more nuanced citation assessment, and other generation adapters;
+integrity, and query limitations. Future work may evaluate more nuanced
+citation assessment and other generation adapters;
 none is implemented here.
+
+## Evaluation and optional native SQLite
+
+The 04-B protocol, defined before the experiments, is in [EVALUATION.md](EVALUATION.md).
+It separates retrieval, context selection, citation validity, grounding, answer
+correctness and abstention. Run `tclsh examples/04-end-to-end-rag/evaluation_test.tcl`
+to check 12 fixed synthetic cases. Retrieval in those cases is simulated; their
+semantic labels are predeclared fixture assessments, not an automatic verifier.
+The cases cover direct and combined facts, similar documents, chronology, roles,
+contradiction, missing evidence, top-k and context omissions, hostile text,
+unsupported citations and unknown citations. A structurally valid citation can
+accompany an incorrect answer. An uncited correct abstention still fails the
+unchanged 04-A structural validator. No generalized abstention policy is enabled.
+
+To explicitly choose the L-3 SQLite extension, use `sqlite-native` as the backend
+and provide its target as a Tcl list containing the database and extension paths:
+
+```sh
+tclsh examples/04-end-to-end-rag/rag.tcl sqlite-native '/path/to/corpus.sqlite3 /path/to/similarity.so' CORPUS_SHA256 /path/to/e5.onnx /path/to/tokenizer.json 'What is the procedure?' 3 12000 11434 MODEL_NAME 256 120000
+```
+
+Use Tcl list quoting when either path contains spaces. Build the extension with
+the instructions in `docs/SIMILARITY_KERNEL.md`. The caller chooses a trusted
+local shared library; loading arbitrary native code is unsafe. Extension loading
+is enabled only for the load operation and then disabled, including on failure.
+A load failure is an error, not a fallback to Tcl. The default `sqlite` route is
+unchanged and does not require the extension; MySQL is unaffected. Both SQLite
+paths validate metadata and completeness and check hashes of selected rows, but
+neither query is an authentication or full storage audit.
+
+Run the 200-record comparison and full E5 query using a previously prepared
+synthetic Example 03 database, without changing it:
+
+```sh
+tclsh examples/04-end-to-end-rag/native_test.tcl /path/to/similarity.so /path/to/synthetic.sqlite3 /path/to/e5.onnx /path/to/tokenizer.json
+tclsh examples/04-end-to-end-rag/integration_test.tcl /path/to/synthetic.sqlite3 /path/to/similarity.so /path/to/e5.onnx /path/to/tokenizer.json
+```
+
+The second test generates a real E5 query embedding and retrieves native SQLite
+results, then uses a simulated generator. It is not a real Ollama generation.
+The supplied database must be the characterized 200-record synthetic corpus.
+The native test creates a private temporary database copy for destructive checks.
+The L-3 extension was compared with the Tcl route on 200 records: top ten and
+all provenance fields matched; the maximum score difference was
+`1.1102230246251565e-16` for the tested vector. Equal-score sequence ordering,
+invalid and incomplete data, selected-row integrity, and load errors were
+checked. This is functional evidence, not a performance benchmark or a full
+storage audit.
+
+`ollama_evaluate.tcl` runs two predefined synthetic transport experiments
+against locally available `gemma3:1b`: the original 04-A prompt, and the same
+prompt with one added sentence requiring `[S1]`. Both use the same question,
+evidence, model, output limit and deadline. This does not change the production
+prompt or add retries. Outputs must be assessed separately for factual support;
+mechanical citation acceptance alone is insufficient.
+
+In one later real end-to-end run, an E5 query over the 200-record synthetic
+database used native SQLite and the original prompt; `gemma3:1b` correctly
+identified the selected fragment's maintenance-and-recovery subject and cited
+`[S1]`. The validator accepted that one response. The controlled prompt results,
+including a structurally valid but contradictory answer, are recorded in
+[EVALUATION.md](EVALUATION.md); neither observation guarantees model quality.
+A separate isolated MySQL run on the same 200-record corpus returned the same
+five results and provenance as native SQLite for one E5 query, with maximum
+absolute score difference `0.0`; this is not a benchmark or an exhaustive
+comparison.

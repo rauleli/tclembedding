@@ -108,13 +108,18 @@ proc ::evidence::retrieve {backend target corpus model tokenizer question topk} 
             uplevel #0 [list source [file join $common sqlite_retrieval.tcl]]
             return [::store::query_results $target $corpus $model $tokenizer $question $topk]
         }
+        sqlite-native {
+            if {[llength $target] != 2 || [lindex $target 1] eq ""} {error "SQLite native target must contain database and extension paths"}
+            uplevel #0 [list source [file join $common sqlite_retrieval.tcl]]
+            return [::store::query_results [lindex $target 0] $corpus $model $tokenizer $question $topk [lindex $target 1]]
+        }
         mysql {
             if {[llength $target] != 3} {error "MySQL target must contain socket, database and user"}
             uplevel #0 [list source [file join $common mysql_retrieval.tcl]]
             ::mysql_store::connect {*}$target
             try {return [::mysql_store::query_results $corpus $model $tokenizer $question $topk]} finally {::mysql_store::db close}
         }
-        default {error "backend must be sqlite or mysql"}
+        default {error "backend must be sqlite, sqlite-native or mysql"}
     }
 }
 proc ::evidence::run {backend target corpus model tokenizer question topk maxchars port generator maxresponse connect_ms response_ms} {

@@ -112,11 +112,15 @@ proc ::store::compare {a b} {
     if {[lindex $a 0] < [lindex $b 0]} {return 1}
     return [expr {[lindex $a 1] < [lindex $b 1] ? -1 : ([lindex $a 1] > [lindex $b 1] ? 1 : 0)}]
 }
-proc ::store::retrieve {corpus vector topk} {
+proc ::store::validate_query {corpus vector topk} {
     if {![regexp {^[0-9a-f]{64}$} $corpus] || ![string is integer -strict $topk] || $topk < 1 || $topk > 256 || [llength $vector] != 384} {error "invalid query parameters"}
     set expected_model $::pipeline::model_hash; set expected_tokenizer $::pipeline::tokenizer_hash
     set expected [db onecolumn {SELECT expected FROM corpora WHERE id=$corpus AND model='intfloat/multilingual-e5-small' AND revision='614241f622f53c4eeff9890bdc4f31cfecc418b3' AND model_sha256=$expected_model AND tokenizer_sha256=$expected_tokenizer AND dimension=384 AND pooling='mean' AND normalization='l2' AND prefix='passage: ' AND status='complete'}]
     if {$expected eq "" || [db onecolumn {SELECT COUNT(*) FROM fragments WHERE corpus=$corpus}] != $expected || [db onecolumn {SELECT MIN(sequence) FROM fragments WHERE corpus=$corpus}] != 0 || [db onecolumn {SELECT MAX(sequence) FROM fragments WHERE corpus=$corpus}] != $expected-1} {error "corpus unavailable or incomplete"}
+    return $expected
+}
+proc ::store::retrieve {corpus vector topk} {
+    set expected [validate_query $corpus $vector $topk]
     set result {}
     db eval {SELECT f.sequence,f.text,f.text_sha256,f.vector,f.vector_sha256,f.fragment_index,f.char_start,f.char_end,m.source_id,m.origin_sha256,m.source,m.conversation_id,m.node_id,m.message_id,m.role,m.position,m.created_json,m.part FROM fragments f JOIN messages m ON f.corpus=m.corpus AND f.message_key=m.message_key WHERE f.corpus=$corpus} row {
         if {[string length $row(vector)] != 1536} {error "invalid stored vector length"}
@@ -134,8 +138,23 @@ proc ::store::retrieve {corpus vector topk} {
     }
     return $hits
 }
+proc ::store::retrieve_native {corpus vector packed topk} {
+    set expected [validate_query $corpus $vector $topk]
+    if {[string length $packed] != 1536 || [binary format r* $vector] ne $packed} {error "invalid query vector bytes"}
+    set hits {}; set count 0
+    db eval {SELECT cosine_similarity_v2(f.vector,$packed) AS score,f.sequence,f.text,f.text_sha256,f.vector,f.vector_sha256,f.fragment_index,f.char_start,f.char_end,m.source_id,m.origin_sha256,m.source,m.conversation_id,m.node_id,m.message_id,m.role,m.position,m.created_json,m.part FROM fragments f JOIN messages m ON f.corpus=m.corpus AND f.message_key=m.message_key WHERE f.corpus=$corpus ORDER BY score DESC,f.sequence ASC} row {
+        if {[string length $row(vector)] != 1536 || $row(score) eq ""} {error "invalid stored vector"}
+        if {$count < $topk} {
+            if {[::pipeline::digest $row(vector)] ne $row(vector_sha256) || [::pipeline::digest [encoding convertto utf-8 $row(text)]] ne $row(text_sha256)} {error "invalid stored vector or text"}
+            lappend hits [list $row(score) $row(sequence) $row(text) $row(source_id) $row(origin_sha256) $row(source) $row(conversation_id) $row(node_id) $row(message_id) $row(role) $row(position) $row(created_json) $row(part) $row(fragment_index) $row(char_start) $row(char_end) intfloat/multilingual-e5-small]
+        }
+        incr count
+    }
+    if {$count != $expected} {error "missing fragment provenance"}
+    return $hits
+}
 proc ::store::compare_wrapped {a b} {return [compare [lindex $a 0] [lindex $b 0]]}
-proc ::store::query_results {path corpus model tokenizer text topk} {
+proc ::store::query_results {path corpus model tokenizer text topk {extension {}}} {
     if {[string trim $text] eq ""} {error "empty query"}
     if {[::pipeline::file_hash $model] ne $::pipeline::model_hash || [::pipeline::file_hash $tokenizer] ne $::pipeline::tokenizer_hash} {error "model or tokenizer hash mismatch"}
     package require tokenizer 1.0.0; package require tclembedding 1.0
@@ -148,7 +167,16 @@ proc ::store::query_results {path corpus model tokenizer text topk} {
         set packed [::pipeline::vector_blob [embedding::compute $handle $ids -pooling mean]]
         binary scan $packed r* vector
         open_db $path 0
-        try {check_schema; return [retrieve $corpus $vector $topk]} finally {db close}
+        try {
+            check_schema
+            if {$extension eq ""} {return [retrieve $corpus $vector $topk]}
+            if {![file isfile $extension]} {error "SQLite extension file does not exist"}
+            try {
+                db enable_load_extension 1
+                db eval {SELECT load_extension($extension,'sqlite3_similarity_init')}
+            } finally {db enable_load_extension 0}
+            return [retrieve_native $corpus $vector $packed $topk]
+        } finally {db close}
     } finally {try {if {$handle ne ""} {embedding::free $handle}} finally {if {$loaded} {tokenizer::free}}}
 }
 proc ::store::query {path corpus model tokenizer text topk} {
