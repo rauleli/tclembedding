@@ -177,3 +177,12 @@ A separate isolated MySQL run on the same 200-record corpus returned the same
 five results and provenance as native SQLite for one E5 query, with maximum
 absolute score difference `0.0`; this is not a benchmark or an exhaustive
 comparison.
+
+## Optional structured output
+
+A separate, opt-in `structured.tcl` entry point distinguishes model-declared
+answers and abstentions from locally rejected output. Its exact schema, tests,
+local-server compatibility observations and limitations are in
+[STRUCTURED.md](STRUCTURED.md). The existing text CLI and its behavior remain
+unchanged. Structural validity and valid evidence IDs do not verify semantic
+truth or the correctness of an abstention.
