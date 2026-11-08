@@ -22,9 +22,11 @@ CUDA; and Jetson Orin with ARM64/AArch64 and integrated NVIDIA GPU. On Jetson,
 characterize CPU and GPU execution separately and record JetPack, CUDA and ONNX
 Runtime versions. These are research targets, not established compatibility.
 
-L-5 portability and L-6 cross-platform characterization are future work, not
-authorized by this roadmap. Compare the embedding library independently from
-applicable RAG experiments; library tests must not require Ollama or any other
+L-5 SIMD-01 scalar/SSE2 similarity configuration is formally accepted within
+the documented Phenom II scope. Further L-5 portability and L-6 cross-platform
+characterization remain future work, not authorized by this roadmap. Compare
+the embedding library independently from applicable RAG experiments; library
+tests must not require Ollama or any other
 generative runtime. Record actual hardware capabilities, software versions,
 execution providers, artifacts and quantization, numerical results, memory,
 latency, throughput and failures. Preserve both successful and unsuccessful

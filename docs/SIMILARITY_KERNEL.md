@@ -1,6 +1,6 @@
 # Shared float32 similarity kernel
 
-`src/similarity.c` and `src/similarity.h` implement two C functions independent
+`src/similarity.c` and `src/similarity.h` provide two C functions independent
 of database and Tcl headers: `similarity_dot_f32le` and
 `similarity_cosine_f32le`. Each accepts two byte pointers, their byte lengths,
 and an output `double *`; 1 denotes success and 0 denotes invalid input. The
@@ -28,6 +28,78 @@ Ordering, NULL filtering and deterministic tie-breaking are responsibilities of
 the SQL query. The existing examples use descending score followed by sequence.
 
 ## Build
+
+The configured build also provides optional `sqlite-similarity.so` and
+`mysql-cosine-v2.so` targets in its `unix` directory. Neither is built by the
+default binding target. Supply `SQLITE_CPPFLAGS` or `MYSQL_CPPFLAGS` with the
+appropriate development headers. For example, from the configured build:
+
+```sh
+make -C unix sqlite-similarity.so SQLITE_CPPFLAGS=-I/path/to/sqlite/include
+make -C unix mysql-cosine-v2.so MYSQL_CPPFLAGS="$(mysql_config --include)"
+```
+
+The corresponding `install-sqlite-similarity` and
+`install-mysql-similarity` targets install only on explicit request into
+`DESTDIR` plus `SIMILARITY_INSTALL_DIR` (default `libdir/tclembedding-similarity`).
+They do not register functions in a server. Inspect the destination before use.
+These targets link separate scalar and optional SSE2 objects with a stateless
+dispatcher. On x86-64, the dispatcher checks CPUID SSE2 on each call when the
+object was configured; the ABI requires the OS to preserve XMM state. It uses
+scalar if that check is unavailable or fails. There is no shared mutable
+initialization. On other architectures and in cross builds,
+the configured selection is scalar. `--with-simd=scalar` explicitly disables
+SSE2. The configure output distinguishes CPU/OS observations, compiler flags,
+and objects selected for a subsequent build. It does not establish that those
+objects were compiled or executed; detecting AVX, AVX2 or AVX-512 does not
+implement a kernel.
+Future implementations require separately compiled objects and runtime CPU/OS
+checks before dispatch. AVX requires CPUID AVX and OSXSAVE plus XGETBV showing
+enabled XMM and YMM state; AVX2 additionally requires CPUID AVX2. AVX-512F
+additionally requires CPUID AVX-512F and XGETBV state for opmask and both ZMM
+register components. Each future implementation must also check its own
+instruction subsets. The configure probe uses the compiler's CPU-support
+builtins; those observations are not an implemented AVX dispatcher and have
+not been verified on an AVX-capable machine here.
+
+Configured x86-64 kernel and adapter objects use `-march=x86-64` plus a
+preprocessor guard that rejects explicitly enabled instruction sets beyond
+the baseline. `configure` checks that guard before its CPU probes. Compilers
+may expose additional target extensions not covered by the guard: use a
+baseline toolchain and avoid architecture-specific user flags. Autoconf's
+earlier compiler checks and external libraries are outside this guard.
+
+The external ONNX Runtime selects its own execution provider and internal
+optimizations. Similarity-kernel selection does not control ONNX Runtime's MLAS
+dispatch. A future reproducible source build of ONNX Runtime must separately
+record its revision, dependencies, target baseline and build options; using an
+identified external runtime remains supported.
+
+The manual commands below retain the standalone scalar build and do not use
+the configured dispatcher.
+
+For the configured SSE2 build, run the concurrent dispatch check from the
+source directory, substituting the actual configured build path:
+
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror -pthread tests/similarity_dispatch_test.c \
+  "$BUILD_DIR/unix/similarity_dispatch.o" "$BUILD_DIR/unix/similarity_scalar.o" \
+  "$BUILD_DIR/unix/similarity_sse2.o" -Wl,--wrap=similarity_sse2_cosine \
+  -lm -o "$BUILD_DIR/dispatch-test"
+"$BUILD_DIR/dispatch-test"
+```
+
+This test requires GNU-compatible linker wrapping, an SSE2 object and a
+compatible target. It counts actual calls into the SSE2 object.
+On the characterized Phenom II, the configured dispatcher, scalar and SSE2
+paths passed this concurrent synthetic check; the 768-case comparison against
+the standalone scalar reference had maximum absolute difference
+`3.8857805861880479e-16` at the existing `1e-12` tolerance. The optional
+SQLite extension passed a small synthetic SQL check, and the MySQL adapter
+passed the existing SQL suite on an isolated MySQL 8.4.10 server. The isolated
+server reported an unavailable `component_reference_cache` component; effects
+outside the tested cases are not established. Cross compilation and non-x86
+execution remain untested. These results are not a general concurrency proof.
 
 With C11, SQLite development headers and MySQL development headers installed by
 the operator, build the independent artifacts in a private directory:
@@ -70,8 +142,9 @@ schema, input format or deployed server is altered by these source changes.
 ## Validation and limits
 
 On Linux x86-64, AMD Phenom II X4 965, GCC 15.3.1, MySQL 8.4.10 and the Tcl
-SQLite 3.45.2 package, scalar and explicitly enabled SSE2 builds ran. SSE2 is
-opt-in and no runtime dispatch is supplied; SSE4.1, AVX and AVX2 are not assumed.
+SQLite 3.45.2 package, scalar and explicitly enabled SSE2 standalone builds ran.
+Those historical standalone builds have no dispatcher; SSE4.1, AVX and AVX2
+are not assumed. The later configured dispatcher is described above.
 The 768-vector-length standalone reference test retained its existing absolute
 `1e-12` threshold. Independently compiled scalar and SSE2 libraries differed by
 at most `3.8857805861880479e-16` absolute and `1.1126198955597224e-13`
@@ -79,7 +152,7 @@ relative for non-negligible scores in that synthetic sample. This is not a
 universal bound. The SSE2 test exercises the SSE2 cosine path; the dot product
 is scalar. The system compiled AVX2/FMA flags only and did not execute them.
 
-The scalar/SSE2 comparison can be repeated on an SSE2-capable x86 host:
+The original standalone scalar/SSE2 comparison can be repeated on an SSE2-capable x86 host:
 
 ```sh
 tclsh tests/mysql_cosine_test.tcl

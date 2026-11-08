@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L-5 SIMD-01 — similarity configuration
+
+- Formally accept configured scalar and SSE2 similarity objects and stateless
+  runtime dispatch within the characterized Phenom II environment. Optional
+  SQLite and MySQL adapters use the configured objects. Compiler feature
+  probes, baseline guards, numerical and concurrent tests are documented in
+  `docs/SIMILARITY_KERNEL.md`.
+- AVX, AVX2 and AVX-512 implementations, actual cross compilation, non-x86
+  execution and the full binding suite with external fixtures remain unverified
+  or pending; CPU feature detection is not an implementation of those paths.
+
 ### Legacy-hardware RAG characterization
 
 - Preserve synthetic structured-response observations, historical limitations,

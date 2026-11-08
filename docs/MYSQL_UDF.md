@@ -45,7 +45,7 @@ Do not register experimental functions on a server used by other applications. U
 
 ## CPU paths
 
-The default implementation is scalar C. An optional SSE2 implementation is enabled only when explicitly compiling with `-DCOSINE_ENABLE_SSE2` and the compiler targets x86/x86-64 with `__SSE2__`; e.g., on a compatible target add `-msse2 -DCOSINE_ENABLE_SSE2`. There is no runtime CPU dispatch: the operator must ensure the deployment CPU supports every instruction emitted by the compiler. The default scalar source remains available on non-x86 targets with compatible C float representation; non-x86 execution has not been tested. Compiling with hardware-specific flags can generate additional instructions outside the explicitly selected code path, so build for the intended deployment baseline rather than requiring `-march=native`.
+The manual standalone build above is scalar C. An optional standalone SSE2 implementation can be enabled with `-msse2 -DCOSINE_ENABLE_SSE2` on a compatible x86 target; that manual build has no dispatcher. The configured build's optional MySQL target instead uses separate objects and stateless dispatch as described in [SIMILARITY_KERNEL.md](SIMILARITY_KERNEL.md). Non-x86 execution remains untested. Build for the intended deployment baseline; do not require `-march=native`.
 
 The SSE2 path uses double-precision vector arithmetic and decodes little-endian bytes without assuming pointer alignment. SSE3 and SSE4.1 are not needed for this implementation. AMD SSE4a is not SSE4.1. No explicit AVX2 or FMA implementation or runtime dispatch is included; compiling with those flags does not establish that an AVX2/FMA-specific implementation was tested or is safe on older CPUs.
 
