@@ -1,5 +1,8 @@
 # Evidence evaluation protocol
 
+Later synthetic CPU observations and their limitations are recorded in
+[LEGACY_HARDWARE_EXPERIMENTS.md](../../docs/LEGACY_HARDWARE_EXPERIMENTS.md).
+
 This protocol is fixed before the experiments below. All records are invented.
 Labels are kept outside the generator messages. The cases do not estimate model
 accuracy on real conversations.

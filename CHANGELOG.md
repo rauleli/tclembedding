@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Legacy-hardware RAG characterization
+
+- Preserve synthetic structured-response observations, historical limitations,
+  and a bounded CPU-only E5/SQLite/Ollama experiment in
+  `docs/LEGACY_HARDWARE_EXPERIMENTS.md`.
+
 ### Slice 008 — batch inference (formally accepted)
 
 - Add `embedding::compute_batch` with explicit padding ID, right-padding, attention masks, per-sequence mean or CLS pooling and L2. Preserve the existing single-sequence API.

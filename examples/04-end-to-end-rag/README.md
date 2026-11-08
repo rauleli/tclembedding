@@ -186,3 +186,6 @@ local-server compatibility observations and limitations are in
 [STRUCTURED.md](STRUCTURED.md). The existing text CLI and its behavior remain
 unchanged. Structural validity and valid evidence IDs do not verify semantic
 truth or the correctness of an abstention.
+
+For the synthetic legacy-hardware experiments and preserved results, see
+[LEGACY_HARDWARE_EXPERIMENTS.md](../../docs/LEGACY_HARDWARE_EXPERIMENTS.md).

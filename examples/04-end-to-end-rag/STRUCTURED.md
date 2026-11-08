@@ -124,4 +124,8 @@ contract. The successful HTTP responses establish that the previous grammar
 failure did not recur in these three requests; they do not establish a valid
 structured-v1 answer or semantic correctness. The earlier minimal schema
 experiment and the original HTTP 500 results remain historical evidence.
-No real structured-v1 run has yet passed the local validator.
+At the time of those tests, no real structured-v1 run had passed the local validator.
+
+The subsequent synthetic legacy-hardware observations, including an accepted
+end-to-end run and adverse model results, are documented separately in
+[LEGACY_HARDWARE_EXPERIMENTS.md](../../docs/LEGACY_HARDWARE_EXPERIMENTS.md).

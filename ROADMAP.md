@@ -13,6 +13,24 @@ These examples consume the public library; they are separate from the native bin
 
 An earlier isolated local HTTP chat experiment exercised response parsing, error handling and a simulated transport. It did not validate generation against a real LLM and is not part of Example 01. Future integration requires its own design and verification.
 
+## Cross-generation hardware characterization
+
+The observed AMD Phenom II X4 965 results are a historical reference, not a
+universal minimum hardware requirement or performance target. Future research
+targets include x86 CPUs with SSE2, AVX, AVX2 and AVX-512; NVIDIA GPUs with
+CUDA; and Jetson Orin with ARM64/AArch64 and integrated NVIDIA GPU. On Jetson,
+characterize CPU and GPU execution separately and record JetPack, CUDA and ONNX
+Runtime versions. These are research targets, not established compatibility.
+
+L-5 portability and L-6 cross-platform characterization are future work, not
+authorized by this roadmap. Compare the embedding library independently from
+applicable RAG experiments; library tests must not require Ollama or any other
+generative runtime. Record actual hardware capabilities, software versions,
+execution providers, artifacts and quantization, numerical results, memory,
+latency, throughput and failures. Preserve both successful and unsuccessful
+observations and distinguish hardware effects from configuration differences.
+See [legacy hardware experiments](docs/LEGACY_HARDWARE_EXPERIMENTS.md).
+
 ## Slice 001 — native tokenization
 
 **Formally accepted with recognized outstanding issues.** The Rust/C/Tcl backend and tests are described in `BASELINE.md` and `CHARACTERIZATION.md`. Acceptance does not constitute a commit, publication or authorization to start another slice.
