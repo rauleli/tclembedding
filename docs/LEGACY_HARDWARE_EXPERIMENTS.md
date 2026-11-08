@@ -155,6 +155,87 @@ The exact locally observed model digests were
 Ollama configuration; thinking was not switched off. The public observations
 record only its presence, not its content.
 
+## Mistral 7B synthetic structured responses
+
+The locally installed `mistral:7b-instruct` model was identified by digest
+`f974a74358d62a017b37c6f424fcdf2744ca02926c4f952513ddf474b2fa5091`,
+4,113,301,824 bytes, 7.2B parameters and Q4_0 quantization. Ollama 0.15.6
+reported CPU execution. The host had approximately 23 GiB available RAM and
+zero swap in use before the run; no Ollama runner was resident. No model was
+downloaded. The same 04-C prompt, three fixtures and validator were used with
+temperature 0, `num_predict=192` and a 900-second HTTP deadline per request.
+There were no retries.
+
+| Case | HTTP / termination | Local result | Fixture assessment | External time |
+|---|---|---|---|---:|
+| Explicit | 200 / stop | `answered`, S1 | Correct: the source says 9 | 337.897 s |
+| Absent | 200 / stop | `abstained`, S1 | Appropriate; identifies the missing closing time | 181.224 s |
+| Contradiction | 200 / stop | `abstained`, S1 and S2 | Appropriate; identifies unresolved conflicting sources | 218.974 s |
+
+The server reported, respectively, load times of 33.197, 0.048 and 0.039 s;
+prompt evaluation of 242.992, 54.814 and 92.434 s; and generation of 61.442,
+125.805 and 125.885 s. These are conversions from the retained nanosecond
+measurements, not independently measured stages. Across the sampled runs,
+aggregate runner RSS reached 4,680,136 KiB; sampled host available memory
+remained at least 20,187,168 KiB and sampled swap use was zero. Samples were
+taken every five seconds and do not establish absolute maxima or minima. The
+model was warm for later cases; cache and loading differences prevent simple
+latency attribution.
+
+The earlier `llama3.2:3b` cases were favorable on the same three fixtures;
+`gemma3:4b` and `qwen2.5:1.5b` were assessed only on the explicit fixture.
+`qwen3:1.7b` also answered the explicit case and abstained on both others;
+`phi4-mini:3.8b` unnecessarily abstained on the explicit case. These observations
+are individual trials, not a ranking, and do not isolate size, model design,
+quantization, hardware instruction sets or cache state as causes.
+
+## DeepSeek R1 7B synthetic structured responses
+
+The additional locally installed `deepseek-r1:7b` has digest
+`0a8c266910232fd3291e71e5ba1e058cc5af9d411192cf88b6d30e92b6e73163`,
+7.6B parameters and Q4_K_M quantization. It was not downloaded. The same
+three fixtures, prompt, validator, temperature 0, `num_predict=192` and
+900-second deadline were used once each. Its default reasoning configuration
+was not changed. Mistral was initially still resident; the aggregated RSS
+figures therefore cannot be attributed to DeepSeek alone.
+
+| Case | HTTP / termination | Local result | Fixture assessment | External time |
+|---|---|---|---|---:|
+| Explicit | 200 / stop | `answered`, S1 | Correct: the source says 9 | 310.393 s |
+| Absent | 200 / stop | `answered`, S1 | Incorrect: invented a 5 PM closing time | 126.571 s |
+| Contradiction | 200 / stop | `answered`, S1 | Incorrect: chose 9 without resolving the conflict | 154.847 s |
+
+The latter two demonstrate why selected source identifiers and valid JSON do
+not establish semantic grounding. The maximum aggregate runner RSS sampled in
+the first case was 9,744,556 KiB while another runner was resident. The minimum
+sampled available memory was 15,046,924 KiB and the maximum sampled swap use
+was 256 KiB. Five-second sampling does not establish absolute peaks.
+
+## GPT-OSS 20B: one synthetic structured response
+
+The locally installed `gpt-oss:20b` had digest
+`f2b8351c629c005bd3f0a0e3046f905afcbffede19b648e4bd7c884cdfd63af6`,
+13,780,173,839 bytes, 20.9B parameters and MXFP4 quantization. It was not
+downloaded. One explicit-fact fixture used the same structured-v1 prompt,
+temperature 0 and `num_predict=192`, with a 1200-second HTTP deadline. Its
+default reasoning configuration was not changed. Ollama reported CPU execution.
+
+The response was HTTP 200, `done=true`, `done_reason=stop`, locally valid:
+`{"status":"answered","answer":"The workshop opens at 9.","citations":["S1"]}`.
+This fact and citation match the synthetic source. The observed request time
+was 506.653 s. The server reported total 506.650 s, load 101.904 s, prompt
+evaluation 3.178 s for 289 tokens and generation 34.820 s for 23 tokens;
+these reported components do not sum to the total, and the remainder has not
+been attributed. One case cannot establish general semantic quality.
+
+The sampled runner RSS maximum was 13,949,532 KiB; the independent final sample
+was 13,949,536 KiB. The minimum sampled available memory was 14,281,388 KiB.
+Swap use was 4,481,844 KiB before and reached 4,481,936 KiB in the samples.
+In 98 separate one-second system samples, swap input was zero and swap output
+was nonzero once, at 68 KiB/s; these host-wide samples are not attributable
+solely to one process and do not establish absolute peaks. The model's separate
+thinking field was present and is not included in the public observation.
+
 ## Observation format and reproduction
 
 [Sanitized synthetic observations](legacy_hardware_observations.jsonl) contain
@@ -169,10 +250,20 @@ content is intentionally omitted; `thinking_present` records whether it was
 returned. No system logs, local paths, credentials or private corpus are
 included. `diagnostic=accepted` concerns structure only; the judgments above
 are separate human evaluations of these fixed fixtures.
-The observation file SHA-256 is
+The SHA-256 of the original 13-record prefix is
 `22334339b9d8bf892329f362d49be4b96e9c574f6b6c4ff5d96dd695f3b7d332`.
+After adding the seven observations above, the complete 20-record file SHA-256 is
+`89eafb1156d8f53517897d7e2c51491e2254a9a2cd17756726b69fd03d6afb17`.
 Run `tclsh examples/04-end-to-end-rag/legacy_observations_test.tcl` to check the
 JSONL, common request settings and local structural outcomes without generation.
+
+To reproduce the later synthetic 7B comparisons with local artifacts, run
+`tclsh examples/04-end-to-end-rag/mistral_experiment.tcl /path/outside/repository/results.jsonl`
+for Mistral, or append `deepseek-r1:7b` for the three DeepSeek cases. Append
+`gpt-oss:20b` to run only the explicit-fact GPT-OSS case. The output file must
+not exist. These commands do not download models. The script checks each
+locally observed digest; a different artifact is an error and requires a new
+characterization rather than a silent substitution.
 
 Prepare a verified synthetic 200-record database using Example 03's fixture and
 embedding procedures in [the pipeline](../examples/03-chatgpt-export/EMBEDDING_PIPELINE.md)

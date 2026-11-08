@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve synthetic structured-response observations, historical limitations,
   and a bounded CPU-only E5/SQLite/Ollama experiment in
   `docs/LEGACY_HARDWARE_EXPERIMENTS.md`.
+- Add CPU-only structured-response observations for local Mistral 7B,
+  DeepSeek R1 7B and one GPT-OSS 20B case, retaining unsuccessful semantic
+  outcomes and the integrity hash of the original thirteen records.
 
 ### Slice 008 — batch inference (formally accepted)
 
