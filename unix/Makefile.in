@@ -37,6 +37,8 @@ LIBS = @LIBS@ -lonnxruntime -lm
 SIMD_OBJECTS = @SIMD_OBJECTS@
 SIMD_CPPFLAGS = @SIMD_CPPFLAGS@
 SIMD_SSE2_CFLAGS = @SIMD_SSE2_CFLAGS@
+SIMD_AVX_CFLAGS = @SIMD_AVX_CFLAGS@
+SIMD_AVX2_CFLAGS = @SIMD_AVX2_CFLAGS@
 SIMD_BASE_CFLAGS = @SIMD_BASE_CFLAGS@
 SIMILARITY_OBJECTS = similarity_dispatch.o similarity_scalar.o $(SIMD_OBJECTS)
 SIMILARITY_GUARD = -include $(top_srcdir)/src/similarity_baseline.h
@@ -84,6 +86,10 @@ similarity_scalar.o: $(top_srcdir)/src/similarity.c $(top_srcdir)/src/similarity
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMILARITY_GUARD) -fvisibility=hidden -DCOSINE_FORCE_SCALAR -Dsimilarity_cosine_f32le=similarity_scalar_cosine -Dsimilarity_dot_f32le=similarity_scalar_dot -c -o $@ $<
 similarity_sse2.o: $(top_srcdir)/src/similarity.c $(top_srcdir)/src/similarity.h $(top_srcdir)/src/similarity_baseline.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMILARITY_GUARD) $(SIMD_SSE2_CFLAGS) -fvisibility=hidden -DCOSINE_ENABLE_SSE2 -Dsimilarity_cosine_f32le=similarity_sse2_cosine -Dsimilarity_dot_f32le=similarity_sse2_dot -c -o $@ $<
+similarity_avx.o: $(top_srcdir)/src/similarity_avx.c Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMD_AVX_CFLAGS) -fvisibility=hidden -c -o $@ $<
+similarity_avx2.o: $(top_srcdir)/src/similarity_avx.c Makefile
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMD_AVX2_CFLAGS) -DTCLEMBEDDING_AVX2 -fvisibility=hidden -c -o $@ $<
 sqlite-similarity.so: $(SIMILARITY_OBJECTS) $(top_srcdir)/src/sqlite_similarity.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMILARITY_GUARD) $(SQLITE_CPPFLAGS) -shared $(LDFLAGS) -o $@ $(top_srcdir)/src/sqlite_similarity.c $(SIMILARITY_OBJECTS) -lm
 mysql-cosine-v2.so: $(SIMILARITY_OBJECTS) $(top_srcdir)/src/rag_optimizations.c
@@ -97,7 +103,8 @@ install-mysql-similarity: mysql-cosine-v2.so
 	$(INSTALL) $< "$(DESTDIR)$(SIMILARITY_INSTALL_DIR)/"
 test-similarity-dispatch: $(SIMILARITY_OBJECTS)
 	@test -n "$(SIMD_OBJECTS)" || { echo "SSE2 object not configured" >&2; exit 1; }
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) -pthread $(top_srcdir)/tests/similarity_dispatch_test.c $(SIMILARITY_OBJECTS) -Wl,--wrap=similarity_sse2_cosine -lm -o similarity-dispatch-test
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) $(SIMILARITY_GUARD) -DTCLEMBEDDING_HAVE_SSE2 -c $(top_srcdir)/src/similarity_dispatch.c -o similarity_dispatch_sse2_test.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(SIMD_BASE_CFLAGS) -pthread $(top_srcdir)/tests/similarity_dispatch_test.c similarity_dispatch_sse2_test.o similarity_scalar.o similarity_sse2.o -Wl,--wrap=similarity_sse2_cosine -lm -o similarity-dispatch-test
 	./similarity-dispatch-test
 
 # Install target
@@ -155,7 +162,7 @@ test-embedding-batch: $(SHARED_LIB) pkgIndex.tcl
 
 # Clean targets
 clean:
-	rm -f $(OBJECTS) $(SHARED_LIB) tokenizer_bridge.o tcltokenizer.so libtclembedding_tokenizer.so tokenizer_abi_test pkgIndex.tcl similarity_dispatch.o similarity_scalar.o similarity_sse2.o similarity-dispatch-test sqlite-similarity.so mysql-cosine-v2.so
+	rm -f $(OBJECTS) $(SHARED_LIB) tokenizer_bridge.o tcltokenizer.so libtclembedding_tokenizer.so tokenizer_abi_test pkgIndex.tcl similarity_dispatch.o similarity_scalar.o similarity_sse2.o similarity_avx.o similarity_avx2.o similarity_dispatch_sse2_test.o similarity-dispatch-test sqlite-similarity.so mysql-cosine-v2.so
 
 distclean: clean
 	rm -f Makefile

@@ -47,7 +47,7 @@ Do not register experimental functions on a server used by other applications. U
 
 The manual standalone build above is scalar C. An optional standalone SSE2 implementation can be enabled with `-msse2 -DCOSINE_ENABLE_SSE2` on a compatible x86 target; that manual build has no dispatcher. The configured build's optional MySQL target instead uses separate objects and stateless dispatch as described in [SIMILARITY_KERNEL.md](SIMILARITY_KERNEL.md). Non-x86 execution remains untested. Build for the intended deployment baseline; do not require `-march=native`.
 
-The SSE2 path uses double-precision vector arithmetic and decodes little-endian bytes without assuming pointer alignment. SSE3 and SSE4.1 are not needed for this implementation. AMD SSE4a is not SSE4.1. No explicit AVX2 or FMA implementation or runtime dispatch is included; compiling with those flags does not establish that an AVX2/FMA-specific implementation was tested or is safe on older CPUs.
+The SSE2 path uses double-precision vector arithmetic and decodes little-endian bytes without assuming pointer alignment. SSE3 and SSE4.1 are not needed for this implementation. AMD SSE4a is not SSE4.1. The configured build also contains separately compiled AVX and AVX2 paths when supported; they were not executed on the characterized non-AVX CPU. FMA is not used. See [SIMILARITY_KERNEL.md](SIMILARITY_KERNEL.md) for the evidence and remaining validation.
 
 ## Reproducible standalone tests and observed measurements
 

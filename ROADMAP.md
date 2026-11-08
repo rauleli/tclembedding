@@ -23,7 +23,9 @@ characterize CPU and GPU execution separately and record JetPack, CUDA and ONNX
 Runtime versions. These are research targets, not established compatibility.
 
 L-5 SIMD-01 scalar/SSE2 similarity configuration is formally accepted within
-the documented Phenom II scope. Further L-5 portability and L-6 cross-platform
+the documented Phenom II scope. SIMD-02 AVX/AVX2 kernels are implemented but
+await functional and numerical characterization on compatible hardware.
+Further L-5 portability and L-6 cross-platform
 characterization remain future work, not authorized by this roadmap. Compare
 the embedding library independently from applicable RAG experiments; library
 tests must not require Ollama or any other

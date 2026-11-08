@@ -103,6 +103,17 @@ for flag in sse2 avx avx2 avx512f; do
     [eval "compiler_$flag=no"; AC_MSG_RESULT([no])])
 done
 CFLAGS=$save_CFLAGS
+AS_IF([test "$simd_arch" = x86_64 && test "$compiler_avx" = yes], [
+  CFLAGS="$save_CFLAGS -mavx -mno-avx2 -mno-fma -ffp-contract=off -Werror"
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <immintrin.h>]],
+    [[__m256d x = _mm256_set1_pd(2.0); x = _mm256_add_pd(x, x); return _mm256_movemask_pd(x);]])], [], [compiler_avx=no])
+])
+AS_IF([test "$simd_arch" = x86_64 && test "$compiler_avx2" = yes], [
+  CFLAGS="$save_CFLAGS -mavx2 -mno-fma -ffp-contract=off -Werror"
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <immintrin.h>]],
+    [[__m256i x = _mm256_set1_epi32(1); x = _mm256_add_epi32(x, x); return _mm256_movemask_epi8(x);]])], [], [compiler_avx2=no])
+])
+CFLAGS=$save_CFLAGS
 SIMD_BASE_CFLAGS=
 AS_IF([test "$simd_arch" = x86_64], [
   CFLAGS="$save_CFLAGS -march=x86-64 -Werror"
@@ -114,6 +125,8 @@ AS_IF([test "$simd_arch" = x86_64], [
 SIMD_OBJECTS=
 SIMD_CPPFLAGS=
 SIMD_SSE2_CFLAGS=
+SIMD_AVX_CFLAGS=
+SIMD_AVX2_CFLAGS=
 AS_IF([test "$simd_mode" = auto && test "$simd_arch" = x86_64 &&
        test "$compiler_sse2" = yes && test "$cross_compiling" != yes &&
        test "$cpu_sse2" = yes], [
@@ -121,14 +134,28 @@ AS_IF([test "$simd_mode" = auto && test "$simd_arch" = x86_64 &&
   SIMD_CPPFLAGS=-DTCLEMBEDDING_HAVE_SSE2
   SIMD_SSE2_CFLAGS=-msse2
 ])
+AS_IF([test "$simd_mode" = auto && test "$simd_arch" = x86_64 &&
+       test "$compiler_avx" = yes && test "$cross_compiling" != yes && test "$cpu_avx" = yes], [
+  SIMD_OBJECTS="$SIMD_OBJECTS similarity_avx.o"
+  SIMD_CPPFLAGS="$SIMD_CPPFLAGS -DTCLEMBEDDING_HAVE_AVX"
+  SIMD_AVX_CFLAGS='-mavx -mno-avx2 -mno-fma -ffp-contract=off'
+])
+AS_IF([test "$simd_mode" = auto && test "$simd_arch" = x86_64 &&
+       test "$compiler_avx2" = yes && test "$cross_compiling" != yes && test "$cpu_avx2" = yes], [
+  SIMD_OBJECTS="$SIMD_OBJECTS similarity_avx2.o"
+  SIMD_CPPFLAGS="$SIMD_CPPFLAGS -DTCLEMBEDDING_HAVE_AVX2"
+  SIMD_AVX2_CFLAGS='-mavx2 -mno-fma -ffp-contract=off'
+])
 AC_SUBST([SIMD_OBJECTS])
 AC_SUBST([SIMD_CPPFLAGS])
 AC_SUBST([SIMD_SSE2_CFLAGS])
+AC_SUBST([SIMD_AVX_CFLAGS])
+AC_SUBST([SIMD_AVX2_CFLAGS])
 AC_SUBST([SIMD_BASE_CFLAGS])
 AC_MSG_NOTICE([SIMD mode=$simd_mode target=$simd_arch cross=$cross_compiling])
 AC_MSG_NOTICE([CPU/OS: SSE2=$cpu_sse2 AVX=$cpu_avx AVX2=$cpu_avx2 AVX512F=$cpu_avx512f])
 AC_MSG_NOTICE([compiler flags: SSE2=$compiler_sse2 AVX=$compiler_avx AVX2=$compiler_avx2 AVX512F=$compiler_avx512f])
-AC_MSG_NOTICE([configured similarity objects: scalar $SIMD_OBJECTS; AVX/AVX2/AVX512 not implemented])
+AC_MSG_NOTICE([configured similarity objects: scalar $SIMD_OBJECTS; AVX512 not implemented])
 
 # Check for required headers
 AC_CHECK_HEADERS([onnxruntime_c_api.h], [], [

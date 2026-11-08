@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L-5 SIMD-02 — AVX and AVX2 implementation
+
+- Add separately compiled AVX and AVX2 cosine kernels with CPU/OS-checked
+  dispatch. On the characterized Phenom II the objects compiled, but neither
+  advanced path executed; the non-AVX fallback was exercised.
+- Functional and numerical validation on AVX/AVX2 hardware, performance and
+  AVX-512 remain pending. No acceleration is claimed.
+
 ### L-5 SIMD-01 — similarity configuration
 
 - Formally accept configured scalar and SSE2 similarity objects and stateless

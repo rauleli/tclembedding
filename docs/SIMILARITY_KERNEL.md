@@ -43,24 +43,65 @@ The corresponding `install-sqlite-similarity` and
 `install-mysql-similarity` targets install only on explicit request into
 `DESTDIR` plus `SIMILARITY_INSTALL_DIR` (default `libdir/tclembedding-similarity`).
 They do not register functions in a server. Inspect the destination before use.
-These targets link separate scalar and optional SSE2 objects with a stateless
-dispatcher. On x86-64, the dispatcher checks CPUID SSE2 on each call when the
-object was configured; the ABI requires the OS to preserve XMM state. It uses
-scalar if that check is unavailable or fails. There is no shared mutable
-initialization. On other architectures and in cross builds,
-the configured selection is scalar. `--with-simd=scalar` explicitly disables
-SSE2. The configure output distinguishes CPU/OS observations, compiler flags,
+These targets link a scalar object and configured SIMD objects with a stateless
+dispatcher. After trying configured AVX2 and AVX paths, on x86-64 it checks
+CPUID SSE2 when that object was configured; the ABI requires the OS to
+preserve XMM state. It uses scalar if no configured SIMD path is usable. There
+is no shared mutable initialization. On other architectures and in cross builds,
+the configured selection is scalar. `--with-simd=scalar` disables SIMD objects.
+The configure output distinguishes CPU/OS observations, compiler flags,
 and objects selected for a subsequent build. It does not establish that those
-objects were compiled or executed; detecting AVX, AVX2 or AVX-512 does not
-implement a kernel.
-Future implementations require separately compiled objects and runtime CPU/OS
-checks before dispatch. AVX requires CPUID AVX and OSXSAVE plus XGETBV showing
-enabled XMM and YMM state; AVX2 additionally requires CPUID AVX2. AVX-512F
-additionally requires CPUID AVX-512F and XGETBV state for opmask and both ZMM
-register components. Each future implementation must also check its own
-instruction subsets. The configure probe uses the compiler's CPU-support
-builtins; those observations are not an implemented AVX dispatcher and have
-not been verified on an AVX-capable machine here.
+objects were compiled or executed; detecting a feature does not demonstrate
+that its kernel was executed or accelerated a workload.
+The AVX and AVX2 cosine implementations are compiled separately when configure
+detects suitable CPU/OS support and compiler flags. Dispatch rechecks CPUID AVX,
+XSAVE and OSXSAVE before XGETBV, then requires enabled XMM/YMM state; AVX2 also
+requires CPUID leaf 7 AVX2. AVX processes four double-precision lanes; AVX2
+also checks eight float32 exponent fields with 256-bit integer instructions.
+The intended benefit is reduced validation work per vector block, not a
+measured speedup. FMA and floating-point contraction are disabled. Both
+objects compiled on the Phenom II, but were not executed there; numerical
+equivalence and performance on supported CPUs remain unverified. A forced
+dispatcher with both objects linked made no advanced calls on that CPU.
+AVX-512 remains unimplemented; it would additionally require CPUID AVX-512F
+and XGETBV state for opmask and both ZMM register components, plus checks for
+the exact instruction subsets used.
+
+To reproduce the non-AVX dispatch check on a suitable x86-64 host, configure
+the project normally, then use these commands from the source directory. They
+compile advanced objects but the check must not call them:
+
+```sh
+make -C "$BUILD_DIR/unix" similarity_scalar.o similarity_sse2.o \
+  similarity_avx.o similarity_avx2.o \
+  SIMD_AVX_CFLAGS='-mavx -mno-avx2 -mno-fma -ffp-contract=off' \
+  SIMD_AVX2_CFLAGS='-mavx2 -mno-fma -ffp-contract=off'
+cc -std=c11 -O2 -fPIC -march=x86-64 -include src/similarity_baseline.h \
+  -DTCLEMBEDDING_HAVE_SSE2 -DTCLEMBEDDING_HAVE_AVX -DTCLEMBEDDING_HAVE_AVX2 \
+  -c src/similarity_dispatch.c -o "$BUILD_DIR/dispatch-all.o"
+cc -std=c11 -O2 -pthread tests/similarity_no_avx_test.c "$BUILD_DIR/dispatch-all.o" \
+  "$BUILD_DIR/unix/similarity_scalar.o" "$BUILD_DIR/unix/similarity_sse2.o" \
+  "$BUILD_DIR/unix/similarity_avx.o" "$BUILD_DIR/unix/similarity_avx2.o" \
+  -Wl,--wrap=similarity_avx_cosine -Wl,--wrap=similarity_avx2_cosine \
+  -lm -o "$BUILD_DIR/no-avx-test"
+"$BUILD_DIR/no-avx-test"
+```
+
+For a later compatible target, `tests/similarity_avx_compare.c` compares each
+advanced function separately against the scalar reference with absolute
+tolerance `1e-12`, invalid inputs and extremes. Build it with the three objects
+created above, then select a path explicitly:
+
+```sh
+cc -std=c11 -O2 -march=x86-64 tests/similarity_avx_compare.c \
+  "$BUILD_DIR/unix/similarity_scalar.o" "$BUILD_DIR/unix/similarity_avx.o" \
+  "$BUILD_DIR/unix/similarity_avx2.o" -lm -o "$BUILD_DIR/avx-compare"
+"$BUILD_DIR/avx-compare" avx
+"$BUILD_DIR/avx-compare" avx2
+```
+
+The test checks the selected CPU/OS capability before calling that function.
+The executable was compiled but neither path was executed on the non-AVX host.
 
 Configured x86-64 kernel and adapter objects use `-march=x86-64` plus a
 preprocessor guard that rejects explicitly enabled instruction sets beyond
@@ -78,19 +119,15 @@ identified external runtime remains supported.
 The manual commands below retain the standalone scalar build and do not use
 the configured dispatcher.
 
-For the configured SSE2 build, run the concurrent dispatch check from the
-source directory, substituting the actual configured build path:
+For a configured build with SSE2, run the concurrent SSE2-only dispatch check:
 
 ```sh
-cc -std=c11 -O2 -Wall -Wextra -Werror -pthread tests/similarity_dispatch_test.c \
-  "$BUILD_DIR/unix/similarity_dispatch.o" "$BUILD_DIR/unix/similarity_scalar.o" \
-  "$BUILD_DIR/unix/similarity_sse2.o" -Wl,--wrap=similarity_sse2_cosine \
-  -lm -o "$BUILD_DIR/dispatch-test"
-"$BUILD_DIR/dispatch-test"
+make -C "$BUILD_DIR/unix" test-similarity-dispatch
 ```
 
 This test requires GNU-compatible linker wrapping, an SSE2 object and a
-compatible target. It counts actual calls into the SSE2 object.
+compatible target. It builds an SSE2-only dispatcher and counts actual calls
+into the SSE2 object; it does not test selection of AVX or AVX2.
 On the characterized Phenom II, the configured dispatcher, scalar and SSE2
 paths passed this concurrent synthetic check; the 768-case comparison against
 the standalone scalar reference had maximum absolute difference
