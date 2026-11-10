@@ -58,6 +58,15 @@ user message; this separation is not a guarantee against prompt injection.
 
 ## Use
 
+An optional final `think-mode` argument accepts `default` or `off`. The default
+omits the `think` field and preserves the existing request. `off` sends a
+top-level JSON boolean `think: false`; select it explicitly only for a model
+and Ollama version that support the field. This setting does not change the
+prompt, generation schema, token limit, sampling options or validator. An error
+or an invalid result remains an error, and no fallback or retry is performed.
+Changing the mode changes the experimental conditions; record it with the
+result rather than combining it with default-thinking observations.
+
 Use the same arguments as `rag.tcl`, selecting the separate entry point. For
 example, with a prepared synthetic SQLite database and explicitly trusted L-3
 extension:
@@ -129,3 +138,25 @@ At the time of those tests, no real structured-v1 run had passed the local valid
 The subsequent synthetic legacy-hardware observations, including an accepted
 end-to-end run and adverse model results, are documented separately in
 [LEGACY_HARDWARE_EXPERIMENTS.md](../../docs/LEGACY_HARDWARE_EXPERIMENTS.md).
+
+### Current qualification reference and tested thinking mode
+
+Ollama 0.40.15 is the proposed current qualification reference, conditional on
+review and the tests actually run; the earlier 0.15.6 observations above are
+historical. The structured unit test checks that the default request omits
+`think`, that explicit `off` sends a JSON boolean false without changing other
+request fields, that invalid modes fail, and that `off` reaches the mocked
+transport. The existing rejection tests and local validation rules are retained.
+
+Two Qwen3 fixtures reached the output limit under the default setting. Repeating
+only those two with `off` at the same 192-token limit produced complete,
+structurally accepted outputs; fixture-specific semantic judgments are in
+`CHARACTERIZATION.md`. No automatic inference of model support, retry, citation
+repair or semantic classification was added. Test the model, digest and server
+version before treating the option as supported in another environment.
+
+A subsequent bounded synthetic transport check on the previously characterized
+CPU-only system used Ollama 0.40.15 and the installed Qwen3 1.7B model. With
+`off`, one explicit-fact request returned a locally accepted `answered` result
+with S1 in 91.398 seconds. This observation establishes neither general
+accuracy nor support across models.

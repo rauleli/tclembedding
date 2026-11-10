@@ -319,3 +319,43 @@ The dependency updates were subsequently accepted within those characterized con
 A synthetic ONNX graph declared hidden dimension 2 but returned dimension 8,193 at runtime. ONNX Runtime 1.20.1 warned about the discrepancy, and the original batch implementation accepted the output: the pre-run metadata check alone did not enforce the bound on the actual tensor. The batch path now requires the actual hidden dimension to equal the validated static metadata and rechecks the actual bounds before allocating the pooled vector or accessing output data. Synthetic fixtures exercise both a 2-to-3 mismatch and the 2-to-8,193 mismatch, with controlled errors. This does not prevent ONNX Runtime itself from allocating its output or other internal tensors before returning it. The existing `embedding::compute` path was not changed and still validates its effective output dimension without requiring a static declaration.
 
 The three-row synthetic fixtures use exactly representable integer-to-float casts and compare expected normalized values with absolute tolerance `1e-12`, avoiding byte-for-byte Tcl formatting comparisons. Real-model exact matches remain observations of the measured environment. Exhaustive injected allocation failures and arbitrary malformed ONNX Runtime responses remain untested.
+
+## Structured generation qualification on CPU
+
+On Linux x86-64 with an AMD EPYC 7642 and AVX2, Ollama 0.40.15 is the
+proposed reference for structured-generation qualification, subject to the
+specific tests below and further review. This is CPU evidence only. The
+reference version does not establish semantic correctness or compatibility
+with every model; earlier Ollama observations remain historical evidence.
+
+With Qwen3 1.7B Q4_K_M, digest
+`8f68893c685c3ddff2aa3fffce2aa60a30bb2da65ca488b61fff134a4d1730e7`,
+the explicit and conflicting-evidence fixtures originally reached the
+192-token output limit with default thinking. Both envelopes had
+`done_reason=length`, 192 generated tokens and a nonempty thinking field; the
+validator rejected them. The explicit final content was incomplete and the
+conflict case had no final content. Thinking was present, but the server did
+not report a separate thinking-token count in these records.
+
+The same two requests were repeated once with the only request change being
+top-level `think: false`. Temperature 0, `num_predict=192`, prompts, selected
+sources and generation schema were unchanged. Both returned HTTP 200,
+`done_reason=stop` and an empty thinking field. The explicit case used 35
+output tokens and was structurally accepted as `answered` with S1; its answer
+matched the source. The conflict case used 43 tokens and was accepted as
+`abstained` with S1/S2; its answer did not claim to resolve the conflict. These
+are two observations under a revised protocol, not a general quality or latency
+claim. The results support the interpretation that default thinking consumed
+part of the output budget; they do not establish a separate reasoning-token
+count or a universal causal rule.
+
+For Gemma 1B, three prior current-version fixture responses were syntactically
+valid JSON with empty citations and were rejected by the local validator. The
+generation schema permits an empty array, whereas `answered` requires a
+citation locally; the prompt requests a citation. Reconstructed requests and
+local validation tests support the conclusion that the validator enforced its
+contract, without proving why the model omitted citations. For Phi4-mini, the
+recorded explicit request contained S1 and the opening time; the structurally
+valid abstention was semantically inappropriate for that fixture. Neither case
+justifies inserting a citation or overriding the model's declaration. No
+additional generations were made for these two models during this diagnosis.

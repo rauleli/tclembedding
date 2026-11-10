@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Structured generation: explicit thinking option (proposed)
+
+- Add an opt-in `off` mode for the Ollama top-level `think: false` field;
+  the default request and structured validation contract remain unchanged.
+- Record Ollama 0.40.15 as the proposed qualification reference, conditional on
+  the identified tests. Two Qwen3 cases terminated and passed structural
+  validation with thinking explicitly disabled. Gemma and Phi observations
+  retain their respective structural and semantic failures.
+
 ### L-5 SIMD-02 — AVX and AVX2 implementation
 
 - Add separately compiled AVX and AVX2 cosine kernels with CPU/OS-checked

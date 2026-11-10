@@ -5,8 +5,9 @@ namespace eval ::structured {
     variable version structured-v1
     variable generation_schema {{"type":"object","properties":{"status":{"type":"string","enum":["answered","abstained"]},"answer":{"type":"string","minLength":1},"citations":{"type":"array","maxItems":32,"uniqueItems":true,"items":{"type":"string","pattern":"^S[1-9][0-9]{0,2}$"}}},"required":["status","answer","citations"],"additionalProperties":false}}
 }
-proc ::structured::request {question selected model maxresponse} {
+proc ::structured::request {question selected model maxresponse {think_mode default}} {
     variable generation_schema
+    if {$think_mode ni {default off}} {error "think mode must be default or off"}
     # Reuse the existing evidence serialization and its input validation.
     set base [::evidence::request $question $selected $model $maxresponse]
     set user [json get $base messages 1 content]
@@ -15,6 +16,9 @@ proc ::structured::request {question selected model maxresponse} {
     set second [json object role {string user} content [list string $user]]
     set messages [json array [list json $first] [list json $second]]
     set options [json object num_predict [list number $maxresponse]]
+    if {$think_mode eq "off"} {
+        return [json object model [list string $model] messages [list json $messages] stream {boolean 0} options [list json $options] format [list json $generation_schema] think {boolean 0}]
+    }
     return [json object model [list string $model] messages [list json $messages] stream {boolean 0} options [list json $options] format [list json $generation_schema]]
 }
 # rl_json collapses duplicate keys; inspect top-level key strings before decoding.
@@ -71,25 +75,29 @@ proc ::structured::validate {envelope selected} {
     }
     return [list $status $answer $citations]
 }
-proc ::structured::generate {port model question selected maxresponse connect_ms response_ms} {
+proc ::structured::generate {port model question selected maxresponse connect_ms response_ms {think_mode default}} {
+    if {$think_mode ni {default off}} {error "think mode must be default or off"}
     ::evidence::local_model $port $model $connect_ms $response_ms
-    set body [request $question $selected $model $maxresponse]
+    set body [request $question $selected $model $maxresponse $think_mode]
     return [validate [::evidence::http POST $port /api/chat $body $connect_ms $response_ms] $selected]
 }
-proc ::structured::run {backend target corpus model tokenizer question topk maxchars port generator maxresponse connect_ms response_ms} {
+proc ::structured::run {backend target corpus model tokenizer question topk maxchars port generator maxresponse connect_ms response_ms {think_mode default}} {
+    if {$think_mode ni {default off}} {error "think mode must be default or off"}
     set hits [::evidence::retrieve $backend $target $corpus $model $tokenizer $question $topk]
     set selected [::evidence::select $hits $topk $maxchars]
     if {![llength $selected]} {puts "No usable evidence was retrieved; no answer was generated."; return}
     if {[llength $selected] < [llength $hits]} {puts "Context selection: [llength $selected] of [llength $hits] retrieved fragments fit the limits."}
-    lassign [generate $port $generator $question $selected $maxresponse $connect_ms $response_ms] status answer citations
+    lassign [generate $port $generator $question $selected $maxresponse $connect_ms $response_ms $think_mode] status answer citations
     puts [list structural_status $status answer $answer citations $citations semantic_evaluation not_determined]
     puts "Sources (corpus $corpus):"
     foreach item $selected {lassign $item id hit; puts [list $id {*}$hit]}
 }
 if {[file normalize $argv0] eq [file normalize [info script]]} {
     if {[catch {
-        if {[llength $argv] != 12} {error "usage: structured.tcl backend target corpus model tokenizer question top-k context-chars port generator response-tokens timeout-ms"}
-        lassign $argv backend target corpus model tokenizer question topk chars port generator maxresponse timeout
-        ::structured::run $backend $target $corpus $model $tokenizer $question $topk $chars $port $generator $maxresponse 5000 $timeout
+        if {[llength $argv] ni {12 13}} {error "usage: structured.tcl backend target corpus model tokenizer question top-k context-chars port generator response-tokens timeout-ms ?think-mode?"}
+        lassign $argv backend target corpus model tokenizer question topk chars port generator maxresponse timeout think_mode
+        if {$think_mode eq ""} {set think_mode default}
+        if {$think_mode ni {default off}} {error "think mode must be default or off"}
+        ::structured::run $backend $target $corpus $model $tokenizer $question $topk $chars $port $generator $maxresponse 5000 $timeout $think_mode
     } msg]} {puts stderr "Invalid or failed structured request: $msg"; exit 1}
 }

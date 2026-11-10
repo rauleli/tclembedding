@@ -2,6 +2,21 @@
 
 This record separates authorized decisions from open contracts. Experimental evidence is in `CHARACTERIZATION.md`; code observations do not imply general support.
 
+## D-008 — Structured generation reference and optional thinking
+
+**Status: proposed for review; qualification remains conditional on the
+identified tests.** Ollama 0.40.15 is the current reference for structured
+generation qualification. Ollama 0.15.6 observations are historical evidence,
+not a current qualification target. The reference version alone does not
+establish support for every model or semantic correctness.
+
+An explicit `off` mode may send the top-level `think: false` field. The default
+leaves the field absent, preserving existing requests. The mode is opt-in: it
+does not infer capabilities, change models, retry, alter sampling or relax the
+local validator. Its compatibility with other models and versions is unverified.
+The two Qwen3 observations under this mode form a new protocol revision, not
+a replacement for prior default-thinking observations. See `CHARACTERIZATION.md`.
+
 ## D-001 — Initial tokenization backend
 
 **Status: authorized, implemented and accepted in Slice 001.** Rust Tokenizers 0.22.1 provides the initial backend through a C ABI; Tcl remains the user interface and C provides the bridge. Python was an experimental reference and is not a production dependency. Building the backend requires Rust and Cargo. Sources: `tokenizer-native/Cargo.toml`, `tokenizer-native/Cargo.lock`, `tokenizer-native/hf_tokenizer.h`, `generic/tokenizer_bridge.c`.
