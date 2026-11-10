@@ -194,11 +194,9 @@ synthetic JSONL files under `TMPDIR` or `/tmp`; interrupted runs can leave
 those files. Other model settings used in the characterization are laboratory
 configurations, not additional accepted public interfaces.
 
-## Resumable embeddings
+## Resumable SQL ingestion
 
-A separate [E5 embedding pipeline](EMBEDDING_PIPELINE.md) consumes version 2
-fragments and writes a verified float32 binary file with resumable checkpoints.
-It does not change fragmentation or implement SQL ingestion or search.
-
-For independently selectable SQLite and MySQL storage and semantic retrieval,
-see [SQL_RETRIEVAL.md](SQL_RETRIEVAL.md).
+The [SQL ingestion examples](SQL_RETRIEVAL.md) generate E5 embeddings from
+version 2 fragments and commit them directly to either SQLite or MySQL. Each
+backend records transactional progress and can resume committed batches.
+The earlier experimental pipeline is retained only as a [historical record](EMBEDDING_PIPELINE.md).

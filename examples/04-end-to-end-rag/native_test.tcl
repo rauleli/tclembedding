@@ -1,4 +1,4 @@
-# Synthetic 200-record integration; creates a private copy of the supplied database.
+# Synthetic integration; creates a private copy of the supplied database.
 if {[llength $argv] != 4} {error "usage: native_test.tcl extension synthetic-database model tokenizer"}
 lassign $argv extension source_db model tokenizer
 source [file join [file dirname [file normalize [info script]]] .. 03-chatgpt-export sqlite_retrieval.tcl]
@@ -13,7 +13,7 @@ file copy $source_db $dbpath
 try {
     ::store::check_schema
     set corpus [::store::db onecolumn {SELECT id FROM corpora}]
-    require {[::store::db onecolumn {SELECT COUNT(*) FROM fragments}] == 200} "expected 200 records"
+    require {[::store::db onecolumn {SELECT COUNT(*) FROM fragments}] >= 10} "expected at least 10 records"
     set packed [::store::db onecolumn {SELECT vector FROM fragments WHERE corpus=$corpus AND sequence=0}]
     binary scan $packed r* vector
     set scalar [::store::retrieve $corpus $vector 10]

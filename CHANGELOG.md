@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Direct SQL ingestion
+
+- Formato experimental L2E1 retirado; no forma parte de la superficie soportada.
+- Generate and persist E5 embeddings directly in independent SQLite and MySQL
+  databases, with transactional batch checkpoints and verified resumption.
+
+
 ### Structured generation: explicit thinking option (proposed)
 
 - Add an opt-in `off` mode for the Ollama top-level `think: false` field;

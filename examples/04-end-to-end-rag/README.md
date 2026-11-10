@@ -141,17 +141,17 @@ unchanged and does not require the extension; MySQL is unaffected. Both SQLite
 paths validate metadata and completeness and check hashes of selected rows, but
 neither query is an authentication or full storage audit.
 
-Run the 200-record comparison and full E5 query using a previously prepared
+Run the comparison and full E5 query using a previously prepared
 synthetic Example 03 database, without changing it:
 
 ```sh
 tclsh examples/04-end-to-end-rag/native_test.tcl /path/to/similarity.so /path/to/synthetic.sqlite3 /path/to/e5.onnx /path/to/tokenizer.json
-tclsh examples/04-end-to-end-rag/integration_test.tcl /path/to/synthetic.sqlite3 /path/to/similarity.so /path/to/e5.onnx /path/to/tokenizer.json
+tclsh examples/04-end-to-end-rag/integration_test.tcl /path/to/synthetic.sqlite3 /path/to/similarity.so /path/to/e5.onnx /path/to/tokenizer.json FRAGMENT_SHA256
 ```
 
 The second test generates a real E5 query embedding and retrieves native SQLite
 results, then uses a simulated generator. It is not a real Ollama generation.
-The supplied database must be the characterized 200-record synthetic corpus.
+The supplied version 2 database must contain at least ten synthetic records.
 The native test creates a private temporary database copy for destructive checks.
 The L-3 extension was compared with the Tcl route on 200 records: top ten and
 all provenance fields matched; the maximum score difference was

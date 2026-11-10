@@ -331,6 +331,7 @@ The existing autoconf templates require separately supplied TEA macros. Cross-pl
 - [RAG_EXAMPLE.md](docs/RAG_EXAMPLE.md) - RAG implementation example
 - [In-memory semantic retrieval](examples/01-in-memory-rag/README.md) - Synthetic corpus and embeddings without a database or generative model
 - [Persistent semantic retrieval](examples/02-persistent-rag/README.md) - Store and reuse synthetic embeddings with SQLite
+- [Conversation retrieval with SQL](examples/03-chatgpt-export/SQL_RETRIEVAL.md) - Generate embeddings directly into SQLite or MySQL with resumable batches
 - [CONVERSATION_EXTRACTION.md](docs/CONVERSATION_EXTRACTION.md) - Local ChatGPT conversation export preparation for a future RAG pipeline
 - [SECURITY.md](docs/SECURITY.md) - Security considerations
 

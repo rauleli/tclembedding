@@ -90,7 +90,7 @@ fixture labels are independently predetermined, not computed from model output.
 The complete synthetic E5 and SQLite-native path can be checked with:
 
 ```sh
-tclsh examples/04-end-to-end-rag/structured_integration_test.tcl /path/to/synthetic.sqlite3 /path/to/similarity.so /path/to/e5.onnx /path/to/tokenizer.json
+tclsh examples/04-end-to-end-rag/structured_integration_test.tcl /path/to/synthetic.sqlite3 /path/to/similarity.so /path/to/e5.onnx /path/to/tokenizer.json FRAGMENT_SHA256
 ```
 
 This uses a simulated generator. `structured_experiment.tcl` contains three

@@ -1,7 +1,7 @@
 # Compare the optional native SQLite function with Example 03 on synthetic data.
 package require Tcl 8.6
-if {[llength $argv] != 5} {error "usage: extension fragments vectors model tokenizer"}
-lassign $argv extension fragments vectors model tokenizer
+if {[llength $argv] != 4} {error "usage: extension fragments model tokenizer"}
+lassign $argv extension fragments model tokenizer
 set root [file normalize [file join [file dirname [info script]] ..]]
 source [file join $root examples 03-chatgpt-export sqlite_retrieval.tcl]
 if {[package provide mysqltcl] ne "" || [package provide tdbc::mysql] ne ""} {error "unexpected MySQL dependency"}
@@ -10,7 +10,7 @@ set dir [file join /tmp "sqlite-similarity-integration-[pid]-[clock clicks]"]
 file mkdir $dir
 set path [file join $dir synthetic.sqlite3]
 ::store::init $path
-::store::ingest $path $fragments $vectors
+::store::ingest $path $fragments $model $tokenizer
 set corpus [::pipeline::file_hash $fragments]
 if {[::pipeline::file_hash $model] ne $::pipeline::model_hash || [::pipeline::file_hash $tokenizer] ne $::pipeline::tokenizer_hash} {error "model or tokenizer mismatch"}
 package require tokenizer 1.0.0
@@ -35,7 +35,7 @@ try {
         require {abs($expected-$r(native_score)) < 1e-12} "score mismatch"
         incr n
     }
-    require {$n == 200} "expected 200 synthetic vectors"
+    require {$n >= 5} "expected at least five synthetic vectors"
     set expected [::store::retrieve $corpus $query 5]
     set actual {}
     ::store::db eval {SELECT cosine_similarity_v2(f.vector,$query_blob) AS score,f.sequence,f.text,m.source_id,m.origin_sha256,m.source,m.conversation_id,m.node_id,m.message_id,m.role,m.position,m.created_json,m.part,f.fragment_index,f.char_start,f.char_end FROM fragments f JOIN messages m ON f.corpus=m.corpus AND f.message_key=m.message_key WHERE f.corpus=$corpus ORDER BY score DESC,f.sequence ASC LIMIT 5} r {

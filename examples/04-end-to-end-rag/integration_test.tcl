@@ -1,8 +1,7 @@
 # Complete E5 and SQLite native path with a simulated local generator.
-if {[llength $argv] != 4} {error "usage: integration_test.tcl synthetic-db extension model tokenizer"}
-lassign $argv database extension model tokenizer
+if {[llength $argv] != 5} {error "usage: integration_test.tcl synthetic-db extension model tokenizer corpus"}
+lassign $argv database extension model tokenizer corpus
 source [file join [file dirname [file normalize [info script]]] rag.tcl]
-set corpus 70ade3bb43add618812b62b83582d8279d702ac2d2e4e08c0b5c839ec3a92f57
 rename ::evidence::http ::evidence::http_real
 set ::chat_seen 0
 proc ::evidence::http {method port path body connect_ms response_ms} {

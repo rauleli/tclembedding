@@ -2,6 +2,16 @@
 
 This record separates authorized decisions from open contracts. Experimental evidence is in `CHARACTERIZATION.md`; code observations do not imply general support.
 
+## D-009 — Direct SQL persistence for example ingestion
+
+The SQL examples generate document embeddings and persist them directly in the
+selected database. SQLite and MySQL are independent alternatives. Schema version
+2 stores committed progress, corpus and configuration identity, vectors and
+provenance; incomplete corpora are not queryable. The former intermediate
+format was experimental and is not part of the supported interface. Historical
+results remain documented. Existing schema version 1 databases require a new
+ingestion; automatic migration is not provided.
+
 ## D-008 — Structured generation reference and optional thinking
 
 **Status: proposed for review; qualification remains conditional on the

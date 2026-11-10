@@ -1,51 +1,55 @@
 # Run only against a fresh, disposable server with TCP disabled.
-if {[llength $argv] != 5} {error "usage: socket database user fragments vectors"}
-lassign $argv socket database user fragments vectors
+if {[llength $argv] != 6} {error "usage: socket database user fragments model tokenizer"}
+lassign $argv socket database user fragments model tokenizer
 source [file join [file dirname [file normalize [info script]]] mysql_retrieval.tcl]
-if {[package provide sqlite3] ne ""} {error "MySQL test unexpectedly loaded SQLite"}
-proc assert {expression message} {if {![uplevel 1 [list expr $expression]]} {error $message}}
 ::mysql_store::connect $socket $database $user
-set networking [::mysql_store::run {SHOW VARIABLES LIKE 'skip_networking'} {}]
-set server_socket [::mysql_store::run {SHOW VARIABLES LIKE 'socket'} {}]
-set data_dir [::mysql_store::run {SHOW VARIABLES LIKE 'datadir'} {}]
-set plugin_dir [::mysql_store::run {SHOW VARIABLES LIKE 'plugin_dir'} {}]
-set lab [file dirname [file normalize $socket]]
-assert {[string first "/tmp/" "$lab/"] == 0 && [lindex $networking 0 1] eq "ON" && [file normalize [lindex $server_socket 0 1]] eq [file normalize $socket] && [file normalize [lindex $data_dir 0 1]] eq [file join $lab data] && [file normalize [lindex $plugin_dir 0 1]] eq [file join $lab plugins]} "server is not isolated"
-::mysql_store::init
-::mysql_store::check_udf
-set quoted {synthetic 'quoted'; value}
-set rows [::mysql_store::run {SELECT :quoted} [list quoted $quoted]]
-assert {[lindex $rows 0 0] eq $quoted} "prepared text parameter changed"
-set ::mysql_store::fail_after 2
-if {![catch {::mysql_store::ingest $fragments $vectors}]} {error "injected failure accepted"}
-set ::mysql_store::fail_after -1
-set rows [::mysql_store::run {SELECT COUNT(*) FROM l2_corpora} {}]
-assert {[lindex $rows 0 0] == 0} "rollback failed"
-set worker [file join [file dirname [file normalize $socket]] "l2-interrupted-worker-[pid].tcl"]
-set wf [open $worker {WRONLY CREAT EXCL} 0600]
-puts $wf [format {source %s; ::mysql_store::connect {*}[lrange $argv 0 2]; set ::mysql_store::exit_after 2; ::mysql_store::ingest {*}[lrange $argv 3 4]} [list [file join $::mysql_store_dir mysql_retrieval.tcl]]]
-close $wf
-set code [catch {exec [info nameofexecutable] $worker $socket $database $user $fragments $vectors} child options]
-array set child_result $options
-assert {$code && [lindex $child_result(-errorcode) 0] eq "CHILDSTATUS" && [lindex $child_result(-errorcode) 2] == 86} "child did not terminate as expected"
-set rows [::mysql_store::run {SELECT COUNT(*) FROM l2_corpora} {}]
-assert {[lindex $rows 0 0] == 0} "interrupted process was not rolled back"
-::mysql_store::ingest $fragments $vectors
-::mysql_store::ingest $fragments $vectors
-set corpus [::pipeline::file_hash $fragments]
-set header [lindex [::mysql_store::run {SELECT header_json FROM l2_corpora WHERE id=:corpus} [list corpus $corpus]] 0 0]
-::mysql_store::run {UPDATE l2_corpora SET header_json='{}' WHERE id=:corpus} [list corpus $corpus]
-if {![catch {::mysql_store::ingest $fragments $vectors}]} {error "corrupt corpus metadata accepted"}
-::mysql_store::run {UPDATE l2_corpora SET header_json=:header WHERE id=:corpus} [list header $header corpus $corpus]
-set rows [::mysql_store::run {SELECT vector FROM l2_fragments WHERE corpus=:corpus AND sequence_no=0} [list corpus $corpus]]
-set f [open $vectors rb]; set h [read $f 14]; scan [string range $h 5 12] %x n; seek $f [expr {79+$n+72}]; set reference [read $f 1536]; close $f
-assert {[lindex $rows 0 0] eq $reference} "vector bytes differ"
-set corrupt [file join $lab "corrupt-synthetic-[pid].l2e"]
-file copy $vectors $corrupt
-set file [open $corrupt r+]; fconfigure $file -translation binary; seek $file -1 end; puts -nonewline $file z; close $file
-if {![catch {::mysql_store::ingest $fragments $corrupt}]} {error "corrupt input accepted"}
-set zeros [binary format a1536 {}]
-::mysql_store::run {UPDATE l2_fragments SET vector=:zero WHERE corpus=:corpus AND sequence_no=0} [list zero $zeros corpus $corpus] {zero}
-if {![catch {::mysql_store::ingest $fragments $vectors}]} {error "modified vector accepted"}
-::mysql_store::db close
-puts "MySQL isolated synthetic storage tests passed"
+try {
+  set networking [::mysql_store::run {SHOW VARIABLES LIKE 'skip_networking'} {}]
+  set server_socket [::mysql_store::run {SHOW VARIABLES LIKE 'socket'} {}]
+  set data_dir [::mysql_store::run {SHOW VARIABLES LIKE 'datadir'} {}]
+  set plugin_dir [::mysql_store::run {SHOW VARIABLES LIKE 'plugin_dir'} {}]
+  set lab [file dirname [file normalize $socket]]
+  if {[string first "/tmp/" "$lab/"] != 0 || [lindex $networking 0 1] ne "ON" ||
+      [file normalize [lindex $server_socket 0 1]] ne [file normalize $socket] ||
+      [file normalize [lindex $data_dir 0 1]] ne [file join $lab data] ||
+      [file normalize [lindex $plugin_dir 0 1]] ne [file join $lab plugins]} {
+    error "server is not isolated"
+  }
+  ::mysql_store::init
+  ::mysql_store::check_udf
+  set ::sql_ingest::fail_after 2
+  if {![catch {::mysql_store::ingest $fragments $model $tokenizer 4}]} {error "expected transactional failure"}
+  if {[lindex [::mysql_store::run {SELECT COUNT(*) FROM l2_fragments} {}] 0 0] != 0} {error "rollback failed"}
+  set ::sql_ingest::fail_after -1
+  set ::sql_ingest::stop_after 4
+  if {![catch {::mysql_store::ingest $fragments $model $tokenizer 4}]} {error "expected interrupted ingestion"}
+  if {[lindex [::mysql_store::run {SELECT COUNT(*) FROM l2_fragments} {}] 0 0] != 4} {error "checkpoint failed"}
+  set corpus [::pipeline::file_hash $fragments]
+  if {![catch {::mysql_store::query_results $corpus $model $tokenizer {synthetic maintenance} 3} reason] || $reason ne "corpus unavailable"} {error "incomplete corpus was queryable"}
+  set ::sql_ingest::stop_after -1
+  ::mysql_store::ingest $fragments $model $tokenizer 4
+  ::mysql_store::ingest $fragments $model $tokenizer 4
+  set saved [lindex [::mysql_store::run {SELECT vector FROM l2_fragments WHERE corpus=:corpus AND sequence_no=0} [list corpus $corpus]] 0 0]
+  set zeros [binary format a1536 {}]
+  ::mysql_store::run {UPDATE l2_fragments SET vector=:zeros WHERE corpus=:corpus AND sequence_no=0} [list zeros $zeros corpus $corpus] {zeros}
+  if {![catch {::mysql_store::ingest $fragments $model $tokenizer 4} reason] ||
+      $reason ne "stored row mismatch"} {error "corrupt vector not rejected as expected"}
+  ::mysql_store::run {UPDATE l2_fragments SET vector=:saved WHERE corpus=:corpus AND sequence_no=0} [list saved $saved corpus $corpus] {saved}
+  set hits [::mysql_store::query_results $corpus $model $tokenizer {synthetic maintenance} 3]
+  if {[llength $hits] != 3 || [llength [lindex $hits 0]] != 17} {error "retrieval failed"}
+  set input [open $fragments]
+  fconfigure $input -encoding utf-8 -translation lf
+  set lines [split [string trimright [read $input] "\n"] "\n"]
+  close $input
+  foreach hit $hits {
+    set line [lindex $lines [lindex $hit 1]]
+    foreach {index field} {2 text 3 input_source_id 4 input_sha256 5 source 6 conversation_id 7 node_id 8 message_id 9 role 10 position 12 part 13 fragment_index 14 char_start 15 char_end} {
+      if {[lindex $hit $index] ne [json get $line $field]} {error "retrieved provenance mismatch"}
+    }
+    if {[lindex $hit 11] ne [json extract $line create_time]} {error "retrieved timestamp mismatch"}
+  }
+  if {![catch {::mysql_store::begin_corpus $corpus 12 {incompatible configuration}}]} {error "configuration mismatch accepted"}
+  puts "MySQL direct ingestion, rollback, resumption and retrieval passed"
+} finally {
+  ::mysql_store::db close
+}

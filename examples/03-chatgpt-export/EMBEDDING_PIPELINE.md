@@ -1,3 +1,5 @@
+> Historical record: the experimental format and commands described below have been retired from current examples. For the supported ingestion path, see [SQL_RETRIEVAL.md](SQL_RETRIEVAL.md). The historical implementation can be inspected in an earlier Git revision.
+
 # Resumable E5 embedding file
 
 This example consumes the existing version 2 fragment JSONL. It does not query a

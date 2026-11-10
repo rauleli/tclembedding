@@ -1,132 +1,80 @@
-# Synthetic semantic retrieval with SQLite or MySQL
+# Direct semantic ingestion and retrieval with SQLite or MySQL
 
-These independent Tcl examples import existing fragment JSONL v2 and complete
-L2E1 files. They do not generate document embeddings, implement an LLM, or
-require both database engines. Use synthetic data for tests, and keep databases,
-JSONL, vectors, logs and credentials outside the source tree. Retrieval prints
-fragment text and provenance: treat its output as sensitive.
+These independent Tcl examples consume fragment JSONL version 2, generate E5
+embeddings and commit them directly to the selected SQL database. Neither
+backend requires the other. The corpus identity is the SHA-256 of the complete
+fragment file. Input, database, sidecars and logs may contain private data and
+must remain outside the source tree.
 
-Both paths verify the entire L2E1 header, model identity, record checksums,
-source hash and per-line identity before ingestion. They store the exact 1,536
-float32 little-endian bytes, without decoding or re-embedding. Corpus identity
-is the SHA-256 of the complete fragment JSONL. A second import verifies the
-entire existing corpus and exact vector bytes; a changed L2E1 for the same input
-is rejected, even when numerically close. A changed JSONL is a separate corpus.
-Each import uses one transaction: process termination or failure rolls it back;
-retry the same command after resolving the error. The code does not provide
-incremental commits, concurrent import guarantees, migrations or authentication
-against malicious modification. SHA-256 identifies accidental changes; it is
-not a signature. Keep source files immutable during import.
+## Contract
 
-The E5 query uses the verified model/tokenizer hashes and revision from
-[EMBEDDING_PIPELINE.md](EMBEDDING_PIPELINE.md), `query: `, mean pooling and L2.
-The query vector is rounded to float32 for both engines. Results are Tcl lists:
-score, zero-based input sequence, text, source ID, original-source hash, source,
-conversation ID, node ID, message ID, role, original position, timestamp as a
-JSON scalar, part, fragment index, start, end, and model ID. Equal scores are
-ordered by sequence. Search is a full linear scan; no performance or retrieval
-quality guarantee is implied. The implementations retain query results in
-memory and have only been exercised on a small synthetic corpus; they are not
-validated for the full exported corpus or concurrent writers.
+The characterized model is `intfloat/multilingual-e5-small`, revision
+`614241f622f53c4eeff9890bdc4f31cfecc418b3`; its ONNX and tokenizer hashes are
+checked against `embedding_common.tcl`. Document text is tokenized with
+`passage: `, budget 128 including special tokens, without truncation. E5 uses
+mean pooling, pad ID 1, 384 components and L2 normalization. Vectors are stored
+as 1,536 bytes of IEEE float32 little-endian. Batch sizes from 1 through 32
+respect the 4,096 padded-position limit. The characterized Linux backend and
+ONNX Runtime hashes are checked; differently built libraries require separate
+qualification. Query embeddings use `query: `.
 
-## Integrity by operation
+Schema version 2 stores the corpus and model identity, a configuration identity,
+expected count, committed progress, fragments, vector checksums and provenance.
+Each batch and its checkpoint commit atomically. An interrupted run can repeat
+the same command with unchanged input, model, libraries and batch size; it
+verifies already committed records before continuing. A conflicting input or
+configuration is rejected. Incomplete corpora are not queryable. Checksums
+protect against accidental corruption, not deliberate tampering. SQLite uses
+WAL with `synchronous=FULL`; its WAL and shared-memory files are sensitive too.
+MySQL uses transactional InnoDB tables. Concurrent writers and power-loss
+behavior beyond the database's guarantees have not been characterized.
 
-- Import validates the supplied JSONL and L2E1 file hashes, model and tokenizer
-  identity, record count and sequence, each record checksum, per-line identity,
-  float32 vector length and numeric validity. It stores the exact vector bytes.
-- Corpus opening checks the schema version and expected column signatures;
-  MySQL additionally checks that the two data tables use InnoDB. This is not an
-  exhaustive audit of all database constraints. A query
-  checks model metadata, the stored count and the minimum and maximum sequence;
-  it does not reopen the original JSONL or L2E1 file or rehash the whole corpus.
-- Ranking necessarily reads vectors for the linear search. SQLite checks each
-  vector's length and numerical validity while scoring; MySQL uses its UDF and
-  rejects NULL scores among the selected rows. Only returned top-k rows have
-  their stored text or provenance-line and vector checksums verified. SQLite does not independently
-  authenticate its normalized provenance columns during query. Corruption in an
-  unreturned row may affect ranking without being detected. A concurrent writer
-  could change rows between operations; concurrent queries and writes are not
-  characterized.
-- To check every stored row against both original files, re-run `ingest` with the
-  identical JSONL and L2E1 files. This verifies identity, every vector and all
-  saved provenance without changing a matching corpus. It is an explicit full
-  verification, not an automatic extra checksum scan on each query.
+Retrieval returns the existing 17-field Tcl list with score, sequence, text,
+source identifiers and message provenance. Results are ordered by score
+and then sequence. SQLite can use Tcl cosine or the explicit L-3 native
+extension; MySQL uses its separately installed `cosine_similarity_v2` UDF.
+Both searches are linear. The returned rows are validated; a query is not a
+full audit of every stored record. Re-running ingestion explicitly checks all
+stored records before accepting a completed corpus.
 
 ## SQLite
 
-Requires Tcl 8.6, `sqlite3`, `rl_json`, Tcllib `sha256`, and installed
-`tclembedding`/`tokenizer` for queries. Schema `user_version=1` has a `corpora`
-row with model/configuration and input identity; `messages` normalizes source
-and message-part provenance using a compound identity, not a globally unique
-message ID; `fragments` stores ranges, text, hashes and vector bytes. Foreign
-keys and unique corpus/sequence and message/fragment keys are enforced.
-Queries calculate cosine in Tcl and validate checksums for returned rows.
-
 ```sh
-# Use a private temporary directory and an appropriate Tcl launcher.
 tclsh examples/03-chatgpt-export/sqlite_retrieval.tcl init /path/to/store.sqlite3
-tclsh examples/03-chatgpt-export/sqlite_retrieval.tcl ingest /path/to/store.sqlite3 /path/to/fragments.jsonl /path/to/embeddings.l2e
-tclsh examples/03-chatgpt-export/sqlite_retrieval.tcl query /path/to/store.sqlite3 FRAGMENT_JSONL_SHA256 /path/to/model.onnx /path/to/tokenizer.json 'synthetic question' 3
-
-tclsh examples/03-chatgpt-export/sqlite_retrieval_test.tcl /path/to/synthetic-fragments.jsonl /path/to/synthetic-embeddings.l2e /path/to/new-test-directory
+tclsh examples/03-chatgpt-export/sqlite_retrieval.tcl ingest /path/to/store.sqlite3 /path/to/fragments.jsonl /path/to/model.onnx /path/to/tokenizer.json 8
+tclsh examples/03-chatgpt-export/sqlite_retrieval.tcl query /path/to/store.sqlite3 FRAGMENT_SHA256 /path/to/model.onnx /path/to/tokenizer.json 'synthetic question' 3
 ```
 
-`init` refuses an existing file and requests mode 0600. It can leave an empty
-or partial file after an initialization failure; a later `init` refuses to
-overwrite it, and opening an incomplete or incompatible schema fails. Inspect
-the file and select a new path; no automatic repair or deletion is attempted.
-SQLite files and sidecars must remain private. All variable SQL values use the
-Tcl SQLite binding's prepared parameters.
+Initialization refuses an existing file. A failed initialization may leave a
+partial file; inspect it and choose a new path. Values use SQLite bound
+parameters. No automatic schema migration or concurrent-writer guarantee is
+provided.
 
 ## MySQL
 
-Requires `tdbc::mysql`, MySQL-compatible client libraries, a user-provided
-schema, and a separately installed `cosine_similarity_v2` UDF compatible with
-[MYSQL_UDF.md](../../docs/MYSQL_UDF.md). The example checks identical and
-zero-vector UDF behavior before querying. Schema version 1 consists of
-`l2_schema`, `l2_corpora` and `l2_fragments`; each fragment retains its exact
-JSONL provenance line as a BLOB once, plus its exact vector and checksums.
-Foreign keys and a corpus/sequence primary key apply. MySQL evaluates cosine
-using the UDF and results are sorted by score and sequence. Text is decoded as
-UTF-8 after retrieval. SQL values use TDBC prepared statements, with binary
-parameters explicitly marked `varbinary`. MySQL DDL is not transactional:
-initialize only a new disposable schema; a failed initialization may leave
-partial tables. Initialization refuses to proceed if any L2 table already
-exists. Opening an incomplete or incompatible schema fails; inspect it and
-choose a new empty schema. No automatic repair or deletion is attempted.
+Requires `tdbc::mysql`, a separately supplied schema and the L-3 UDF. Use a
+server with appropriate access controls; tests must use a disposable instance
+with its own socket, data and plugin directories and TCP disabled. MySQL DDL is
+not transactional; a partially initialized schema is rejected rather than
+repaired automatically. The existing driver observation about `TX_ISOLATION`
+and the isolated-server `component_reference_cache` warning remain documented
+in the historical MySQL characterization.
 
 ```sh
-# The socket and schema must be explicitly supplied. Set the optional password
-# in the environment only when needed; do not put it into command arguments.
 tclsh examples/03-chatgpt-export/mysql_retrieval.tcl init /path/to/mysql.sock synthetic_db test_user
-tclsh examples/03-chatgpt-export/mysql_retrieval.tcl ingest /path/to/mysql.sock synthetic_db test_user /path/to/fragments.jsonl /path/to/embeddings.l2e
-tclsh examples/03-chatgpt-export/mysql_retrieval.tcl query /path/to/mysql.sock synthetic_db test_user FRAGMENT_JSONL_SHA256 /path/to/model.onnx /path/to/tokenizer.json 'synthetic question' 3
+tclsh examples/03-chatgpt-export/mysql_retrieval.tcl ingest /path/to/mysql.sock synthetic_db test_user /path/to/fragments.jsonl /path/to/model.onnx /path/to/tokenizer.json 8
+tclsh examples/03-chatgpt-export/mysql_retrieval.tcl query /path/to/mysql.sock synthetic_db test_user FRAGMENT_SHA256 /path/to/model.onnx /path/to/tokenizer.json 'synthetic question' 3
 ```
 
-For isolated testing, use a fresh server with its own data, socket and plugin
-directories and TCP disabled, following the isolated procedure in
-[MYSQL_UDF.md](../../docs/MYSQL_UDF.md). Create a fresh synthetic database, then
-run the following; the runner requires a laboratory under `/tmp`, verifies that
-the data and plugin directories are siblings of the socket and that networking
-is disabled:
+SQL values use TDBC bound parameters, with BLOBs bound as binary. Do not expose
+credentials in command arguments or logs.
 
-```sh
-tclsh examples/03-chatgpt-export/mysql_retrieval_test.tcl /path/to/isolated/mysql.sock fresh_synthetic_db test_user /path/to/synthetic-fragments.jsonl /path/to/synthetic-embeddings.l2e
-```
+## Synthetic tests
 
-MySQL 8.4.10 and `tdbc::mysql` 1.1.7 were used for isolated prepared statement,
-BLOB, transaction and UDF tests. The driver's `configure` inspection produced
-`Unknown system variable 'TX_ISOLATION'` with this server; this example does not
-call that method, and its exercised operations succeeded. Other versions and
-platforms remain unverified.
-The isolated server also logged a failure to load
-`component_reference_cache` from its deliberately separate plugin directory.
-It nevertheless started and passed the operations described above; the effect
-of that missing component outside these tests has not been assessed.
-
-`mysqltcl` 3.052 was also inspected locally. Its exported commands include query,
-execution and escaping operations, but the installed package exposes no
-prepared-statement or parameter-binding command. This observation concerns that
-installed version and does not establish the capabilities of other MySQL Tcl
-bindings or versions. It was not used for this adapter: no claim is made here
-that escaping SQL text is equivalent to bound parameters.
+Generate a synthetic fixture with `sql_fixture.tcl tokenizer.json output.jsonl
+12`. Run `sqlite_retrieval_test.tcl fragments model tokenizer new-directory
+sqlite-extension` or, against an isolated fresh MySQL schema only,
+`mysql_retrieval_test.tcl socket database user fragments model tokenizer`.
+These tests exercise transactional failure, a committed-batch interruption,
+resumption, repeated ingestion and retrieval. They do not establish production
+scale or concurrency guarantees.

@@ -224,12 +224,12 @@ the test with a launcher that can find the installed Tcl packages:
 
 ```sh
 tclsh tests/sqlite_similarity_integration.tcl "$LAB_DIR/similarity.so" \
-  /path/to/synthetic-fragments.jsonl /path/to/synthetic-embeddings.l2e \
+  /path/to/synthetic-fragments.jsonl \
   /path/to/model.onnx /path/to/tokenizer.json
 ```
 
 It creates a new temporary SQLite database and does not require MySQL. The
-input fixture must have 200 records; no private export is required.
+input fixture must have at least five records; no private export is required.
 
 For a repeat of the cross-engine check, build a second library from the
 pre-extraction source (`git show be962f3036c7360f90bc6bff9779f5d5e323419b:src/rag_optimizations.c`)

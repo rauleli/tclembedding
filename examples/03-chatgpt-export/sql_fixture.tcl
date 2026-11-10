@@ -4,7 +4,7 @@ package require rl_json 0.15.7
 package require tokenizer 1.0.0
 namespace import ::rl_json::json
 source [file join [file dirname [file normalize [info script]]] fragment.tcl]
-if {[llength $argv] != 3} {error "usage: embed_pipeline_fixture.tcl tokenizer.json output.jsonl count"}
+if {[llength $argv] != 3} {error "usage: sql_fixture.tcl tokenizer.json output.jsonl count"}
 lassign $argv tok output count
 if {![string is integer -strict $count] || $count < 1 || $count > 1000} {error "invalid fixture count"}
 set hash 0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39

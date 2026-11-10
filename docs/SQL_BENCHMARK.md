@@ -1,3 +1,5 @@
+> Historical record: this benchmark used an experimental input format and an earlier implementation. Its measurements are preserved as observed; the historical commands require Git revision `2ba8ffc6bd429c547431e5acfccbf72c4449bd4a`. Current ingestion is described in [SQL_RETRIEVAL.md](../examples/03-chatgpt-export/SQL_RETRIEVAL.md).
+
 # Synthetic MySQL and SQLite benchmark
 
 ## Protocol fixed before measurement
