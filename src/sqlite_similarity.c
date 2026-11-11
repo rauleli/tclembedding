@@ -28,6 +28,6 @@ int sqlite3_similarity_init(sqlite3 *db, char **error, const sqlite3_api_routine
     (void)error;
     SQLITE_EXTENSION_INIT2(api);
     return sqlite3_create_function_v2(db, "cosine_similarity_v2", 2,
-        SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS, NULL,
-        cosine_sqlite, NULL, NULL, NULL);
+                                      SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS, NULL,
+                                      cosine_sqlite, NULL, NULL, NULL);
 }

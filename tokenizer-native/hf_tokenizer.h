@@ -18,14 +18,14 @@ int hf_load(const char *path, hf_tokenizer **out, char **error);
 /* max_length=0 disables truncation; otherwise truncates with special tokens.
  * utf8 must be non-NULL even when length is zero. Free the returned buffer
  * once, with its original count, using hf_ids_free. */
-int hf_encode(const hf_tokenizer *, const uint8_t *utf8, size_t length,
-              size_t max_length, uint32_t **ids, size_t *count, char **error);
+int hf_encode(const hf_tokenizer *, const uint8_t *utf8, size_t length, size_t max_length,
+              uint32_t **ids, size_t *count, char **error);
 /* The caller owns the returned array. Release it through the same writable,
  * non-overlapping output slots and original count; release resets them and may
  * safely be repeated on those slots. Do not free copied aliases or stale slots.
  * An active handle must not be freed concurrently with an encoding call. */
-int hf_encode_details(const hf_tokenizer *, const uint8_t *utf8, size_t length,
-                      size_t max_length, hf_token_detail **details, size_t *count, char **error);
+int hf_encode_details(const hf_tokenizer *, const uint8_t *utf8, size_t length, size_t max_length,
+                      hf_token_detail **details, size_t *count, char **error);
 void hf_details_free(hf_token_detail **details, size_t *count);
 void hf_ids_free(uint32_t *ids, size_t count);
 void hf_error_free(char *error);

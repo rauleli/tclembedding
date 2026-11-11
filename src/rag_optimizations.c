@@ -32,20 +32,30 @@ cosine_init_result cosine_similarity_init(UDF_INIT *initid, UDF_ARGS *args, char
     return 0;
 }
 
-double cosine_similarity(UDF_INIT *initid, UDF_ARGS *args, cosine_flag_type *is_null, cosine_flag_type *error) {
+double cosine_similarity(UDF_INIT *initid, UDF_ARGS *args, cosine_flag_type *is_null,
+                         cosine_flag_type *error) {
     (void)initid;
     *is_null = 0;
     if (!args || args->arg_count != 2 || !args->args || !args->lengths) {
-        *error = 1; return 0.0;
+        *error = 1;
+        return 0.0;
     }
-    if (!args->args[0] || !args->args[1]) { *is_null = 1; return 0.0; }
+    if (!args->args[0] || !args->args[1]) {
+        *is_null = 1;
+        return 0.0;
+    }
 #if ULONG_MAX > SIZE_MAX
-    if (args->lengths[0] > SIZE_MAX || args->lengths[1] > SIZE_MAX) { *is_null = 1; return 0.0; }
+    if (args->lengths[0] > SIZE_MAX || args->lengths[1] > SIZE_MAX) {
+        *is_null = 1;
+        return 0.0;
+    }
 #endif
     double result;
-    if (!similarity_cosine_f32le((const unsigned char *)args->args[0], (const unsigned char *)args->args[1],
-                   (size_t)args->lengths[0], (size_t)args->lengths[1], &result)) {
-        *is_null = 1; return 0.0;
+    if (!similarity_cosine_f32le((const unsigned char *)args->args[0],
+                                 (const unsigned char *)args->args[1], (size_t)args->lengths[0],
+                                 (size_t)args->lengths[1], &result)) {
+        *is_null = 1;
+        return 0.0;
     }
     return result;
 }

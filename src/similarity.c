@@ -14,7 +14,8 @@
 #if defined(__FAST_MATH__) || (defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__ > 0)
 #error "cosine_similarity requires non-finite checks; disable fast-math"
 #endif
-#if defined(COSINE_ENABLE_SSE2) && defined(__SSE2__) && (defined(__i386__) || defined(__x86_64__)) && !defined(COSINE_FORCE_SCALAR)
+#if defined(COSINE_ENABLE_SSE2) && defined(__SSE2__) &&                                            \
+    (defined(__i386__) || defined(__x86_64__)) && !defined(COSINE_FORCE_SCALAR)
 #include <emmintrin.h>
 #include <xmmintrin.h>
 #define COSINE_SSE2 1
@@ -22,23 +23,24 @@
 #define COSINE_SSE2 0
 #endif
 
-_Static_assert(CHAR_BIT == 8 && sizeof(float) == 4 && FLT_RADIX == 2 &&
-               FLT_MANT_DIG == 24 && FLT_MAX_EXP == 128,
+_Static_assert(CHAR_BIT == 8 && sizeof(float) == 4 && FLT_RADIX == 2 && FLT_MANT_DIG == 24 &&
+                   FLT_MAX_EXP == 128,
                "IEEE 754 binary32 floats are required");
 
 /* Decode bytes explicitly; no alignment or host byte-order assumptions. */
 static float read_float32_le(const unsigned char *p) {
-    uint32_t bits = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-                    ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    uint32_t bits =
+        (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
     float value;
     memcpy(&value, &bits, sizeof(value));
     return value;
 }
 
 /* Returns 1 for valid input and sets output; otherwise returns 0. */
-int similarity_cosine_f32le(const unsigned char *a, const unsigned char *b,
-                            size_t bytes_a, size_t bytes_b, double *output) {
-    if (!a || !b || !output || bytes_a == 0 || bytes_a != bytes_b || bytes_a % 4 != 0) return 0;
+int similarity_cosine_f32le(const unsigned char *a, const unsigned char *b, size_t bytes_a,
+                            size_t bytes_b, double *output) {
+    if (!a || !b || !output || bytes_a == 0 || bytes_a != bytes_b || bytes_a % 4 != 0)
+        return 0;
     size_t n = bytes_a / 4, i = 0;
     double dot = 0.0, aa = 0.0, bb = 0.0;
 #if COSINE_SSE2
@@ -50,7 +52,8 @@ int similarity_cosine_f32le(const unsigned char *a, const unsigned char *b,
         for (size_t j = 0; j < 4; j++) {
             av[j] = read_float32_le(a + 4 * (i + j));
             bv[j] = read_float32_le(b + 4 * (i + j));
-            if (!isfinite(av[j]) || !isfinite(bv[j])) return 0;
+            if (!isfinite(av[j]) || !isfinite(bv[j]))
+                return 0;
         }
         __m128 va = _mm_loadu_ps(av), vb = _mm_loadu_ps(bv);
         __m128d a0 = _mm_cvtps_pd(va), b0 = _mm_cvtps_pd(vb);
@@ -64,32 +67,43 @@ int similarity_cosine_f32le(const unsigned char *a, const unsigned char *b,
         bb1 = _mm_add_pd(bb1, _mm_mul_pd(b1, b1));
     }
     double temp[2];
-    _mm_storeu_pd(temp, _mm_add_pd(dot0, dot1)); dot = temp[0] + temp[1];
-    _mm_storeu_pd(temp, _mm_add_pd(aa0, aa1)); aa = temp[0] + temp[1];
-    _mm_storeu_pd(temp, _mm_add_pd(bb0, bb1)); bb = temp[0] + temp[1];
+    _mm_storeu_pd(temp, _mm_add_pd(dot0, dot1));
+    dot = temp[0] + temp[1];
+    _mm_storeu_pd(temp, _mm_add_pd(aa0, aa1));
+    aa = temp[0] + temp[1];
+    _mm_storeu_pd(temp, _mm_add_pd(bb0, bb1));
+    bb = temp[0] + temp[1];
 #endif
     for (; i < n; i++) {
         double x = read_float32_le(a + 4 * i), y = read_float32_le(b + 4 * i);
-        if (!isfinite(x) || !isfinite(y)) return 0;
-        dot += x * y; aa += x * x; bb += y * y;
+        if (!isfinite(x) || !isfinite(y))
+            return 0;
+        dot += x * y;
+        aa += x * x;
+        bb += y * y;
     }
-    if (!isfinite(dot) || !isfinite(aa) || !isfinite(bb) || aa <= 0.0 || bb <= 0.0) return 0;
+    if (!isfinite(dot) || !isfinite(aa) || !isfinite(bb) || aa <= 0.0 || bb <= 0.0)
+        return 0;
     double result = (dot / sqrt(aa)) / sqrt(bb);
-    if (!isfinite(result)) return 0;
+    if (!isfinite(result))
+        return 0;
     *output = result;
     return 1;
 }
 
-int similarity_dot_f32le(const unsigned char *a, const unsigned char *b,
-                         size_t bytes_a, size_t bytes_b, double *output) {
-    if (!a || !b || !output || bytes_a == 0 || bytes_a != bytes_b || bytes_a % 4 != 0) return 0;
+int similarity_dot_f32le(const unsigned char *a, const unsigned char *b, size_t bytes_a,
+                         size_t bytes_b, double *output) {
+    if (!a || !b || !output || bytes_a == 0 || bytes_a != bytes_b || bytes_a % 4 != 0)
+        return 0;
     double dot = 0.0;
     for (size_t i = 0; i < bytes_a / 4; i++) {
         double x = read_float32_le(a + 4 * i), y = read_float32_le(b + 4 * i);
-        if (!isfinite(x) || !isfinite(y)) return 0;
+        if (!isfinite(x) || !isfinite(y))
+            return 0;
         dot += x * y;
     }
-    if (!isfinite(dot)) return 0;
+    if (!isfinite(dot))
+        return 0;
     *output = dot;
     return 1;
 }

@@ -4,7 +4,9 @@ use tokenizers::Tokenizer;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 { return Err("usage: clone_probe tokenizer.json clone|direct".into()); }
+    if args.len() != 3 {
+        return Err("usage: clone_probe tokenizer.json clone|direct".into());
+    }
     let mut tokenizer = Tokenizer::from_file(&args[1])?;
     tokenizer.with_padding(None);
     tokenizer.with_truncation(None)?;
@@ -17,12 +19,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let clone = tokenizer.clone();
             clone.encode(black_box("hola"), true)?.get_ids().to_vec()
         } else if args[2] == "direct" {
-            tokenizer.encode(black_box("hola"), true)?.get_ids().to_vec()
-        } else { return Err("unknown mode".into()); };
+            tokenizer
+                .encode(black_box("hola"), true)?
+                .get_ids()
+                .to_vec()
+        } else {
+            return Err("unknown mode".into());
+        };
         assert_eq!(ids, expected);
         samples.push(now.elapsed().as_secs_f64() * 1000.0);
     }
     samples.sort_by(|a, b| a.total_cmp(b));
-    println!("mode={} iterations={} min_ms={:.6} median_ms={:.6} max_ms={:.6}", args[2], samples.len(), samples[0], (samples[4] + samples[5]) / 2.0, samples[9]);
+    println!(
+        "mode={} iterations={} min_ms={:.6} median_ms={:.6} max_ms={:.6}",
+        args[2],
+        samples.len(),
+        samples[0],
+        (samples[4] + samples[5]) / 2.0,
+        samples[9]
+    );
     Ok(())
 }

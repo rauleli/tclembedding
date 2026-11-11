@@ -1,7 +1,20 @@
 # Synthetic SQLite tests; no ONNX model is required.
 source [file join [file dirname [file normalize [info script]]] persistent.tcl]
-proc assert {condition message} {if {![uplevel 1 [list expr $condition]]} {error $message}}
-proc must_fail {script} {if {![catch {uplevel 1 $script}]} {error "expected a controlled error"}}
+
+# Fail the test if a required condition is false.
+proc assert {condition message} {
+  if {![uplevel 1 [list expr $condition]]} {
+    error $message
+  }
+}
+
+# Verify that a command fails as expected.
+proc must_fail {script} {
+  if {![catch {uplevel 1 $script}]} {
+    error "expected a controlled error"
+  }
+}
+
 set tmp [file join /tmp "persistent-retrieval-test-[pid]-[clock clicks]"]
 file mkdir $tmp
 set path [file join $tmp test.sqlite3]
@@ -41,35 +54,70 @@ assert {[llength [::persistent::retrieve $vector 1]] == 1} "top-k"
 ::persistent::store [list [list B {New title} {Updated content}]] [list $vector]
 assert {[::persistent::db onecolumn {SELECT COUNT(*) FROM documents}] == 2} "upsert duplicated document"
 assert {[::persistent::db onecolumn {SELECT title FROM documents WHERE id='B'}] eq "New title"} "upsert failed"
-set invalid [lrepeat 384 0.0]; lset invalid 0 NaN
+set invalid [lrepeat 384 0.0]
+lset invalid 0 NaN
 must_fail {::persistent::store [list [list B {Must roll back} content] [list C title content]] [list $vector $invalid]}
-assert {[::persistent::db onecolumn {SELECT title FROM documents WHERE id='B'}] eq "New title"} "transaction did not roll back update"
-assert {[::persistent::db onecolumn {SELECT COUNT(*) FROM documents WHERE id='C'}] == 0} "transaction did not roll back insert"
+assert {[::persistent::db onecolumn {SELECT title FROM documents WHERE id='B'}] eq "New title"} \
+  "transaction did not roll back update"
+assert {[::persistent::db onecolumn {SELECT COUNT(*) FROM documents WHERE id='C'}] == 0} \
+  "transaction did not roll back insert"
 ::persistent::db eval {UPDATE metadata SET vector_format='invalid'}
 must_fail {::persistent::check_metadata synthetic-model synthetic-tokenizer}
-::persistent::db eval {UPDATE metadata SET vector_format='float32-le'; PRAGMA ignore_check_constraints=ON; UPDATE documents SET dimensions=385 WHERE id='A'}
+::persistent::db eval \
+  {UPDATE metadata SET vector_format='float32-le'; PRAGMA ignore_check_constraints=ON; UPDATE documents SET dimensions=385 WHERE id='A'}
 must_fail {::persistent::retrieve $vector 2}
 ::persistent::db eval {UPDATE documents SET dimensions=384 WHERE id='A'; PRAGMA ignore_check_constraints=OFF}
 # Query-mode test uses a synthetic query vector and must never batch documents.
 namespace eval ::tokenizer {}
+# Test embedding command namespace.
 namespace eval ::embedding {}
 package provide tokenizer 1.0.0
 package provide tclembedding 1.0
 set ::batch_calls 0
 set ::tokenizer_freed 0
 set ::embedding_freed 0
+
+# Provide a controlled tokenizer fixture for the test.
 proc ::tokenizer::load_vocab {path} {}
-proc ::tokenizer::tokenize {text} {return {1 2}}
-proc ::tokenizer::free {} {incr ::tokenizer_freed}
-proc ::embedding::init_raw {path} {return synthetic-handle}
-proc ::embedding::compute_batch {args} {incr ::batch_calls; error "unexpected document embedding"}
-proc ::embedding::compute {args} {return $::vector}
-proc ::embedding::free {handle} {incr ::embedding_freed}
-proc synthetic_query {} {
-    set query "synthetic query"
-    set topk 1
-    ::persistent::load_embeddings synthetic synthetic query
+
+# Tokenize or instrument text for the test fixture.
+proc ::tokenizer::tokenize {text} {
+  return {1 2}
 }
+
+# Release the tokenizer fixture state.
+proc ::tokenizer::free {} {
+  incr ::tokenizer_freed
+}
+
+# Initialize the controlled embedding fixture.
+proc ::embedding::init_raw {path} {
+  return synthetic-handle
+}
+
+# Produce controlled batch embeddings for the test.
+proc ::embedding::compute_batch {args} {
+  incr ::batch_calls
+  error "unexpected document embedding"
+}
+
+# Produce a controlled embedding for the test.
+proc ::embedding::compute {args} {
+  return $::vector
+}
+
+# Release the embedding fixture state.
+proc ::embedding::free {handle} {
+  incr ::embedding_freed
+}
+
+# Construct a synthetic query for the test.
+proc synthetic_query {} {
+  set query "synthetic query"
+  set topk 1
+  ::persistent::load_embeddings synthetic synthetic query
+}
+
 synthetic_query
 assert {$::batch_calls == 0} "query recalculated document embeddings"
 assert {$::tokenizer_freed == 1 && $::embedding_freed == 1} "query resources not released"
@@ -81,18 +129,30 @@ must_fail {::persistent::open_existing [file join $tmp absent.sqlite3]}
 assert {![llength [info commands ::persistent::db]]} "connection not closed"
 # A failed query closes its connection and both inference resources.
 rename ::persistent::verify_artifacts ::persistent::real_verify_artifacts
-proc ::persistent::verify_artifacts {model tokenizer} {return {synthetic-model synthetic-tokenizer}}
+
+# Verify the identities of the model and tokenizer artifacts.
+proc ::persistent::verify_artifacts {model tokenizer} {
+  return {synthetic-model synthetic-tokenizer}
+}
+
 rename ::embedding::compute ::embedding::working_compute
-proc ::embedding::compute {args} {error "synthetic query failure"}
+
+# Produce a controlled embedding for the test.
+proc ::embedding::compute {args} {
+  error "synthetic query failure"
+}
+
 try {
-    must_fail [list ::persistent::main query -db $path -model synthetic -tokenizer synthetic -query synthetic]
-    assert {![llength [info commands ::persistent::db]]} "connection left open after error"
-    assert {$::tokenizer_freed == 2 && $::embedding_freed == 2} "query failure did not release resources"
-    must_fail [list ::persistent::main init -db [file join $::persistent_script_dir forbidden.sqlite3] -model synthetic -tokenizer synthetic]
+  must_fail [list ::persistent::main query -db $path -model synthetic -tokenizer synthetic -query synthetic]
+  assert {![llength [info commands ::persistent::db]]} "connection left open after error"
+  assert {$::tokenizer_freed == 2 && $::embedding_freed == 2} "query failure did not release resources"
+  must_fail \
+    [list ::persistent::main init -db [file join $::persistent_script_dir forbidden.sqlite3] -model synthetic \
+    -tokenizer synthetic]
 } finally {
-    rename ::persistent::verify_artifacts {}
-    rename ::persistent::real_verify_artifacts ::persistent::verify_artifacts
-    rename ::embedding::compute {}
-    rename ::embedding::working_compute ::embedding::compute
+  rename ::persistent::verify_artifacts {}
+  rename ::persistent::real_verify_artifacts ::persistent::verify_artifacts
+  rename ::embedding::compute {}
+  rename ::embedding::working_compute ::embedding::compute
 }
 puts "Persistent semantic retrieval tests passed"
