@@ -93,12 +93,28 @@ tokenizer::free
 
 ### Package: tclembedding
 
-#### embedding::init_raw *model_path*
+#### embedding::init_raw *model_path* ?-provider cpu|cuda? ?-device index? ?-profile prefix?
 
-Initializes the ONNX embedding model.
+Initializes the ONNX embedding model. CPU is the default. CUDA must be selected
+explicitly and requires a compatible ONNX Runtime CUDA provider, driver and
+dependencies. An unavailable CUDA provider or failed registration returns an
+error; it is not silently replaced by a CPU-only session. ONNX Runtime may still
+assign individual graph nodes to CPU in a CUDA session.
 
 **Arguments:**
 - `model_path` - Path to ONNX model file
+- `-provider` - `cpu` or `cuda`; defaults to `cpu`.
+- `-device` - Nonnegative decimal CUDA device index, default `0`; requires CUDA.
+- `-profile` - Writable filename prefix for an optional ONNX Runtime profile.
+
+Profiling starts with session creation and is finalized when the handle is freed,
+deleted or its interpreter is destroyed. ONNX Runtime determines the final
+filename by appending a timestamp and `.json`. Explicit `embedding::free`
+reports finalization errors and releases the handle; deletion callbacks cannot
+return an error to the caller. Keep profile files private. Without `-profile`,
+the binding does not request profiling. CPU-only ONNX Runtime installations do
+not require CUDA libraries. Provider registration does not prove that every node
+ran on GPU. See `INSTALL.md` for requirements and the current validation scope.
 
 **Returns:** An opaque handle string scoped to the current interpreter.
 

@@ -359,3 +359,22 @@ recorded explicit request contained S1 and the opening time; the structurally
 valid abstention was semantically inappropriate for that fixture. Neither case
 justifies inserting a citation or overriding the model's declaration. No
 additional generations were made for these two models during this diagnosis.
+
+### Optional ONNX Runtime provider integration
+
+The integrated provider options were compiled against ONNX Runtime C API 31
+and exercised with ONNX Runtime 1.31.1 CPU and synthetic inputs. Default and
+explicit CPU results matched the previously installed binding for the tested
+vector. Invalid options and an unavailable CUDA provider returned errors; CPU
+initialization subsequently succeeded. CPU profiling produced output on explicit
+free, command deletion and interpreter destruction. Safety and batch fixtures
+passed. No CUDA device or functioning NVIDIA driver was available for this
+integration, so actual CUDA execution of this revision is not established.
+An independent build against the 1.20.1 C API also ran a synthetic CPU
+inference and rejected an unavailable CUDA provider; it was not subjected to
+the full 1.31.1 test set.
+
+A separate earlier GPU laboratory prototype reported a 384-component MiniLM
+CPU/CUDA comparison with maximum absolute difference `4.941841397219232e-5`
+and cosine `0.9999999637151032`; its log noted that ONNX Runtime assigned some
+nodes to CPU. That historical observation is not a measurement of this revision.

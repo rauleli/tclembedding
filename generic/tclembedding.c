@@ -17,6 +17,7 @@ extern "C" {
 #include <limits.h>
 #include <stdatomic.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "onnxruntime_c_api.h"
 
 // Estructura de estado
@@ -24,6 +25,7 @@ typedef struct {
     OrtSession *session;
     OrtSessionOptions *options;
     OrtEnv *env;
+    int profiling;
     int has_type_ids;
     int64_t fixed_sequence;
     int64_t fixed_batch;
@@ -34,8 +36,36 @@ typedef struct {
 static const OrtApi *g_ort = NULL;
 static atomic_ullong next_handle = 1;
 
+/* Finish a requested profile once. The caller owns the returned status. */
+static OrtStatus *EmbeddingEndProfile(EmbeddingState *state) {
+    OrtAllocator *allocator = NULL;
+    char *path = NULL;
+    OrtStatus *status;
+    if (!state->session || !state->profiling)
+        return NULL;
+    state->profiling = 0;
+    status = g_ort->GetAllocatorWithDefaultOptions(&allocator);
+    if (!status)
+        status = g_ort->SessionEndProfiling(state->session, allocator, &path);
+    if (!status && !path)
+        status = g_ort->CreateStatus(ORT_FAIL, "profile output filename was not returned");
+    if (!status && path) {
+        Tcl_Obj *result_path = Tcl_NewStringObj(path, -1);
+        Tcl_IncrRefCount(result_path);
+        if (Tcl_FSAccess(result_path, 0) != 0)
+            status = g_ort->CreateStatus(ORT_FAIL, "profile output file was not created");
+        Tcl_DecrRefCount(result_path);
+    }
+    if (path && allocator)
+        allocator->Free(allocator, path);
+    return status;
+}
+
 static void EmbeddingStateDelete(ClientData data) {
     EmbeddingState *state = (EmbeddingState *)data;
+    OrtStatus *status = EmbeddingEndProfile(state);
+    if (status)
+        g_ort->ReleaseStatus(status);
     if (state->session)
         g_ort->ReleaseSession(state->session);
     if (state->options)
@@ -182,12 +212,87 @@ done:
     return result;
 }
 
+/* Reject embedded NUL even when Tcl represents it as modified UTF-8. */
+static int ContainsNull(Tcl_Obj *value) {
+    int count;
+    const Tcl_UniChar *chars = Tcl_GetUnicodeFromObj(value, &count);
+    for (int i = 0; i < count; i++)
+        if (chars[i] == 0)
+            return 1;
+    return 0;
+}
+
 // --- INIT ---
 static int TclEmbedding_Init_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
                                  Tcl_Obj *const objv[]) {
     (void)cd;
-    if (objc != 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "model_path");
+    int cuda = 0, device = 0, provider_seen = 0, device_seen = 0, profile_seen = 0;
+    const char *profile = NULL;
+    if (objc < 2 || objc % 2 != 0) {
+        Tcl_WrongNumArgs(interp, 1, objv,
+                         "model_path ?-provider cpu|cuda? ?-device index? ?-profile prefix?");
+        return TCL_ERROR;
+    }
+    for (int i = 2; i < objc; i += 2) {
+        int option_length, length;
+        const char *option = Tcl_GetStringFromObj(objv[i], &option_length);
+        const char *value = Tcl_GetStringFromObj(objv[i + 1], &length);
+        if ((size_t)option_length != strlen(option) || (size_t)length != strlen(value) ||
+            ContainsNull(objv[i]) || ContainsNull(objv[i + 1])) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("option value contains NUL", -1));
+            return TCL_ERROR;
+        }
+        if (!strcmp(option, "-provider") && !provider_seen) {
+            provider_seen = 1;
+            if (!strcmp(value, "cuda"))
+                cuda = 1;
+            else if (strcmp(value, "cpu")) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("provider must be cpu or cuda", -1));
+                return TCL_ERROR;
+            }
+        } else if (!strcmp(option, "-device") && !device_seen) {
+            device_seen = 1;
+            if (!length) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("device must be a decimal index", -1));
+                return TCL_ERROR;
+            }
+            for (int j = 0; j < length; j++) {
+                if (value[j] < '0' || value[j] > '9' ||
+                    device > (INT_MAX - (value[j] - '0')) / 10) {
+                    Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid CUDA device index", -1));
+                    return TCL_ERROR;
+                }
+                device = device * 10 + value[j] - '0';
+            }
+        } else if (!strcmp(option, "-profile") && !profile_seen) {
+            profile_seen = 1;
+            if (!length || value[length - 1] == '/') {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid profile prefix", -1));
+                return TCL_ERROR;
+            }
+            int components = 0;
+            Tcl_Obj *parts = Tcl_FSSplitPath(objv[i + 1], &components);
+            Tcl_IncrRefCount(parts);
+            Tcl_Obj *parent = components > 1 ? Tcl_FSJoinPath(parts, components - 1)
+                                             : Tcl_NewStringObj(".", -1);
+            Tcl_IncrRefCount(parent);
+            Tcl_StatBuf parent_info;
+            int accessible = Tcl_FSStat(parent, &parent_info) == 0 &&
+                             S_ISDIR(parent_info.st_mode) && Tcl_FSAccess(parent, 2) == 0;
+            Tcl_DecrRefCount(parent);
+            Tcl_DecrRefCount(parts);
+            if (!accessible) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("profile directory is not writable", -1));
+                return TCL_ERROR;
+            }
+            profile = value;
+        } else {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown or duplicate option: %s", option));
+            return TCL_ERROR;
+        }
+    }
+    if (device_seen && !cuda) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("-device requires -provider cuda", -1));
         return TCL_ERROR;
     }
     if (g_ort == NULL)
@@ -207,9 +312,63 @@ static int TclEmbedding_Init_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
     CHECK_STATUS_INIT(g_ort->CreateSessionOptions(&state->options));
     CHECK_STATUS_INIT(g_ort->SetIntraOpNumThreads(state->options, 1));
     CHECK_STATUS_INIT(g_ort->SetSessionExecutionMode(state->options, ORT_SEQUENTIAL));
+    if (profile)
+        CHECK_STATUS_INIT(g_ort->EnableProfiling(state->options, profile));
+    if (cuda) {
+        char **providers = NULL;
+        int count = 0, found = 0;
+        OrtStatus *status = g_ort->GetAvailableProviders(&providers, &count);
+        if (!status) {
+            for (int i = 0; i < count; i++)
+                if (!strcmp(providers[i], "CUDAExecutionProvider"))
+                    found = 1;
+            status = g_ort->ReleaseAvailableProviders(providers, count);
+        }
+        if (status) {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("cannot enumerate providers: %s",
+                                                  g_ort->GetErrorMessage(status)));
+            g_ort->ReleaseStatus(status);
+            EmbeddingStateDelete(state);
+            return TCL_ERROR;
+        }
+        if (!found) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("CUDAExecutionProvider unavailable", -1));
+            EmbeddingStateDelete(state);
+            return TCL_ERROR;
+        }
+        OrtCUDAProviderOptionsV2 *cuda_options = NULL;
+        char device_text[32];
+        snprintf(device_text, sizeof(device_text), "%d", device);
+        const char *keys[] = {"device_id"};
+        const char *values[] = {device_text};
+        status = g_ort->CreateCUDAProviderOptions(&cuda_options);
+        if (!status)
+            status = g_ort->UpdateCUDAProviderOptions(cuda_options, keys, values, 1);
+        if (!status)
+            status = g_ort->SessionOptionsAppendExecutionProvider_CUDA_V2(state->options,
+                                                                          cuda_options);
+        if (cuda_options)
+            g_ort->ReleaseCUDAProviderOptions(cuda_options);
+        if (status) {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("CUDAExecutionProvider setup failed: %s",
+                                                  g_ort->GetErrorMessage(status)));
+            g_ort->ReleaseStatus(status);
+            EmbeddingStateDelete(state);
+            return TCL_ERROR;
+        }
+    }
 
-    CHECK_STATUS_INIT(
-        g_ort->CreateSession(state->env, model_path, state->options, &state->session));
+    OrtStatus *session_status =
+        g_ort->CreateSession(state->env, model_path, state->options, &state->session);
+    if (session_status) {
+        const char *message = g_ort->GetErrorMessage(session_status);
+        Tcl_SetObjResult(interp, cuda ? Tcl_ObjPrintf("CUDA session initialization failed: %s", message)
+                                      : Tcl_NewStringObj(message, -1));
+        g_ort->ReleaseStatus(session_status);
+        EmbeddingStateDelete(state);
+        return TCL_ERROR;
+    }
+    state->profiling = profile != NULL;
 
     if (ValidateInputs(interp, state) != TCL_OK) {
         EmbeddingStateDelete(state);
@@ -919,6 +1078,14 @@ static int TclEmbedding_Free_Cmd(ClientData cd, Tcl_Interp *interp, int objc,
     EmbeddingState *state = GetEmbeddingState(interp, objv[1]);
     if (!state)
         return TCL_ERROR;
+    OrtStatus *profile_status = EmbeddingEndProfile(state);
+    if (profile_status) {
+        Tcl_SetObjResult(interp, Tcl_ObjPrintf("ONNX profiling finalization failed: %s",
+                                              g_ort->GetErrorMessage(profile_status)));
+        g_ort->ReleaseStatus(profile_status);
+        Tcl_DeleteCommandFromToken(interp, state->command);
+        return TCL_ERROR;
+    }
     if (Tcl_DeleteCommandFromToken(interp, state->command) != 0) {
         Tcl_SetObjResult(interp, Tcl_NewStringObj("could not delete embedding handle", -1));
         return TCL_ERROR;

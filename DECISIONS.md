@@ -2,6 +2,14 @@
 
 This record separates authorized decisions from open contracts. Experimental evidence is in `CHARACTERIZATION.md`; code observations do not imply general support.
 
+## D-010 — Explicit ONNX Runtime provider selection
+
+CPU remains the default. CUDA is opt-in through the public ONNX Runtime API;
+provider registration or session initialization errors are returned to Tcl.
+Optional session profiling is finalized on handle destruction. Different nodes
+may use different providers, and current integrated CUDA hardware validation
+remains pending.
+
 ## D-009 — Direct SQL persistence for example ingestion
 
 The SQL examples generate document embeddings and persist them directly in the

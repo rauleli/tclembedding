@@ -17,7 +17,29 @@ The dependency categories above apply to every platform; package names and avail
 * **Fedora/RHEL (DNF):** obtain the distribution's C/C++ compiler, GNU Make, Autoconf, pkg-config, Tcl 8.6 development files and Rust/Cargo. Package names and versions differ between Fedora and RHEL releases; ONNX Runtime development headers and shared library and TEA 3.13 may require separately provisioned sources. No package availability is asserted for a particular release.
 * **Debian/Ubuntu (APT): not yet validated.** Equivalent build-essential, Autoconf, pkg-config, Tcl development, Rust/Cargo, TEA 3.13 and ONNX Runtime development/runtime components are required. Availability and version of each package must be checked for the chosen release; the current rules are not certified on these distributions.
 * **macOS: not yet validated.** Xcode Command Line Tools or another C/C++ toolchain, compatible Autoconf and GNU Make, Tcl 8.6 development files, Rust/Cargo, TEA 3.13 and an appropriate ONNX Runtime C distribution would be needed. The present `.so` and `$ORIGIN` Linux linking rules and package index are not validated as macOS build or loading rules; these prerequisites alone do not establish macOS support.
-* **ARM64 Jetson and DGX Spark: not yet validated.** Each requires an ARM64-compatible Tcl, C/C++ and Rust toolchain, crate sources, TEA 3.13 and ONNX Runtime C headers and libraries matching its OS, architecture and ABI. CPU execution, toolchain availability and the present build rules must be checked on each environment. GPU execution and CUDA compatibility have not been established and are not part of this procedure.
+* **ARM64 Jetson and DGX Spark: not yet validated.** Each requires an ARM64-compatible Tcl, C/C++ and Rust toolchain, crate sources, TEA 3.13 and ONNX Runtime C headers and libraries matching its OS, architecture and ABI. CPU execution, toolchain availability and the present build rules must be checked on each environment. GPU execution and CUDA compatibility have not been established on those platforms.
+
+### Optional CUDA execution
+
+The binding uses ONNX Runtime's public provider API and links to the existing
+runtime library, not directly to CUDA. CPU remains the default and requires no
+CUDA installation. For `-provider cuda`, provision an ONNX Runtime build with
+CUDAExecutionProvider and the matching NVIDIA driver and CUDA dependencies as
+specified for that runtime distribution. The binding does not install them.
+Headers and the loaded runtime must support the requested ONNX Runtime C API.
+This integration was tested with ONNX Runtime 1.31.1 CPU; real CUDA execution
+of the integrated version remains to be checked on compatible hardware.
+
+To run the focused CPU-only provider test after building the extension, use a
+fresh private test directory and a suitable synthetic encoder fixture:
+
+```sh
+tclsh tests/embedding_provider_test.tcl /path/to/model.onnx /path/to/empty-test-directory
+```
+
+Set the normal Tcl package search path and runtime loader configuration for
+the build under test. The test expects CUDA to be unavailable and writes only
+synthetic ONNX Runtime profile files to the supplied directory.
 
 No platform-specific package manager, GPU setup or system modification is performed by the project build.
 

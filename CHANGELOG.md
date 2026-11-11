@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ONNX Runtime providers
+
+- Add explicit CPU/CUDA provider and CUDA device selection and optional ONNX
+  Runtime profiling. CPU remains the default; current integrated CUDA hardware
+  validation is pending.
+
 ### Direct SQL ingestion
 
 - Formato experimental L2E1 retirado; no forma parte de la superficie soportada.
