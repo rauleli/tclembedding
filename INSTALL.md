@@ -1,5 +1,17 @@
 # Installation instructions
 
+## Curated source archive
+
+To prepare an unpublished source-only archive from a committed revision, use
+`dist/make-source.sh COMMIT EXISTING_OUTPUT_DIRECTORY`. The archive is created
+outside the repository, refuses to overwrite its output, contains a manifest
+and records the source commit. Its archive SHA-256 is written alongside it.
+Unpack it and follow the included `INSTALL.md`; it requires the external Tcl,
+TEA, Cargo and ONNX Runtime dependencies described there. The archive includes
+no precompiled libraries, models or third-party runtime. Its curated contents
+are distinct from GitHub's automatic source snapshots. No release is published
+by this command.
+
 The configured Unix build was exercised with Tcl 8.6, ONNX Runtime 1.20.1, TEA 3.13 and the locked Rust tokenizer dependencies on Linux x86-64. Tokenizers 0.23.2 was subsequently tested on the same environment with ONNX Runtime 1.20.1 and, in an isolated experimental build, ONNX Runtime 1.31.1. The system runtime was not replaced. See `CHARACTERIZATION.md` for the tested scope; other Tcl/ONNX versions, platforms, full distribution packaging and offline dependency provisioning remain unverified. Python is not a production dependency.
 
 ## Prerequisites
@@ -190,6 +202,8 @@ make test-tokenizer-abi TOKENIZER_JSON="$TOKENIZER_JSON"
 make test-tokenizer-rust TOKENIZER_JSON="$TOKENIZER_JSON"
 # Only the generated synthetic ONNX fixture directory is required.
 make test-embedding-safety SAFETY_FIXTURES="$SAFETY_FIXTURES"
+# CPU-only runtime; the private directory must already exist and be empty.
+make test-embedding-provider MODEL_ONNX="$MODEL_ONNX" PROVIDER_TEST_DIR="$PROVIDER_TEST_DIR"
 # These require the identified external ONNX model; integration also needs tokenizer JSON.
 make test-tokenizer-embedding TOKENIZER_JSON="$TOKENIZER_JSON" MODEL_ONNX="$MODEL_ONNX"
 make test-embedding-lifecycle MODEL_ONNX="$MODEL_ONNX"
@@ -197,6 +211,6 @@ make test-embedding-lifecycle MODEL_ONNX="$MODEL_ONNX"
 
 Individual targets report failure for missing or unusable inputs; they do not imply that the complete suite passed. Tests execute the newly built libraries, not an installed package. To check an installation separately, set `TCLLIBPATH` to its package directory and invoke the relevant Tcl test script with its fixture arguments. `tests/quick_test.tcl` is a compatibility entry point for the same hash-identified three-case integration check and takes the two explicit file paths; it no longer relies on a fixed model directory or makes an unsupported semantic-success claim.
 
-Crate distribution, ONNX Runtime distribution and non-Linux support remain outside this change. Release artifacts built with debug information can contain local source paths and must be reviewed before publication. No source archive based on `HEAD` alone includes currently untracked working-tree files; source packaging requires a separate review and authorization.
+Crate distribution, ONNX Runtime distribution and non-Linux support remain outside the source archive. Release artifacts built with debug information can contain local source paths and must be reviewed before publication. The curated archive is generated from a committed revision; uncommitted files are never included. Publication requires separate authorization.
 
 For the exact tested environment and limitations, see `CHARACTERIZATION.md` and `BENCHMARKING.md`.

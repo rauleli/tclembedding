@@ -18,14 +18,23 @@ At this point, switching languages would be the experimental choice.
 
 ## Requirements
 
-- **Tcl 8.6 or higher**
-- **ONNX Runtime** (development package)
-  - Linux: `libonnxruntime-dev`
-  - macOS: `onnx-runtime` (via Homebrew)
+- **Tcl 8.6** and its development files; other versions are not characterized.
+- **ONNX Runtime C** headers and library from a compatible installation.
 - **Standard C compiler** (GCC, Clang, etc.)
 - **Rust and Cargo**, to build the native tokenizer with the committed `Cargo.lock`
 
 ## Installation
+
+### Source distributions
+
+The [Releases page](https://github.com/rauleli/tclembedding/releases) is the
+intended location for reviewed source archives when publication is authorized.
+An explicitly prepared source archive is distinct from GitHub's automatically
+generated source snapshots: the prepared archive contains a curated inventory,
+installation instructions and a SHA-256 manifest. No archive is implied to be
+available until it is actually published. Tcl, TEA, Cargo dependencies and ONNX
+Runtime remain external; the source archive does not contain binaries or models.
+See [INSTALL.md](INSTALL.md) for how to build and verify a local archive.
 
 ### Linux build
 

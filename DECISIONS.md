@@ -2,6 +2,15 @@
 
 This record separates authorized decisions from open contracts. Experimental evidence is in `CHARACTERIZATION.md`; code observations do not imply general support.
 
+## D-011 — Curated source distribution
+
+The distribution artifact is a source-only archive made from an explicit
+inventory at a named commit. Tcl, TEA, Cargo crates, ONNX Runtime and models are
+external. No precompiled binary or third-party runtime is included. The Git
+repository retains the historical documentation, while the archive contains a
+short installation guide and the files needed for the selected build and tests.
+Publication is a separate decision.
+
 ## D-010 — Explicit ONNX Runtime provider selection
 
 CPU remains the default. CUDA is opt-in through the public ONNX Runtime API;

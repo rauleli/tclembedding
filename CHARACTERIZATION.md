@@ -378,3 +378,18 @@ A separate earlier GPU laboratory prototype reported a 384-component MiniLM
 CPU/CUDA comparison with maximum absolute difference `4.941841397219232e-5`
 and cosine `0.9999999637151032`; its log noted that ONNX Runtime assigned some
 nodes to CPU. That historical observation is not a measurement of this revision.
+
+### Curated source distribution validation
+
+A source-only candidate assembled from the explicit distribution inventory was
+built outside the source tree on Linux x86-64 with Tcl 8.6.14, TEA 3.13,
+Tokenizers Rust 0.23.2 from the locked Cargo cache and external ONNX Runtime
+1.31.1. Staged installation using `DESTDIR` loaded both Tcl packages in a new
+process outside the build and ran tokenization, individual E5 inference and a
+batch with the identified E5 artifacts. The provider, synthetic safety, batch
+and tokenizer C ABI tests passed. One E5 vector matched the previously installed
+CPU baseline component by component in its Tcl representation. The loaded ONNX Runtime was the explicitly
+configured external installation; it is not included in the source archive.
+This is not a binary distribution or a cross-machine compatibility claim. The
+complete suite requiring the historical MiniLM fixture was not rerun because
+that fixture was not available in this environment.

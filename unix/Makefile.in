@@ -160,6 +160,12 @@ test-embedding-batch: $(SHARED_LIB) pkgIndex.tcl
 	@test -n "$(SAFETY_FIXTURES)" || { echo "Set SAFETY_FIXTURES to the generated fixture directory"; exit 1; }
 	TCLLIBPATH="$(CURDIR)" $(TCLSH_PROG) $(srcdir)/../tests/embedding_batch_test.tcl "$(SAFETY_FIXTURES)"
 
+# This focused test is intended for a CPU-only runtime and writes profiles.
+test-embedding-provider: $(SHARED_LIB) pkgIndex.tcl
+	@test -n "$(MODEL_ONNX)" -a -r "$(MODEL_ONNX)" || { echo "Set MODEL_ONNX to a readable fixture" >&2; exit 1; }
+	@test -n "$(PROVIDER_TEST_DIR)" -a -d "$(PROVIDER_TEST_DIR)" || { echo "Set PROVIDER_TEST_DIR to an existing empty private directory" >&2; exit 1; }
+	TCLLIBPATH="$(CURDIR)" $(TCLSH_PROG) $(srcdir)/../tests/embedding_provider_test.tcl "$(MODEL_ONNX)" "$(PROVIDER_TEST_DIR)"
+
 # Clean targets
 clean:
 	rm -f $(OBJECTS) $(SHARED_LIB) tokenizer_bridge.o tcltokenizer.so libtclembedding_tokenizer.so tokenizer_abi_test pkgIndex.tcl similarity_dispatch.o similarity_scalar.o similarity_sse2.o similarity_avx.o similarity_avx2.o similarity_dispatch_sse2_test.o similarity-dispatch-test sqlite-similarity.so mysql-cosine-v2.so
@@ -168,4 +174,4 @@ distclean: clean
 	rm -f Makefile
 
 # Phony targets
-.PHONY: all install install-lib print-install-dir test test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety test-embedding-batch clean distclean
+.PHONY: all install install-lib print-install-dir test test-tokenizer test-tokenizer-rust test-tokenizer-abi test-tokenizer-embedding test-embedding-lifecycle test-embedding-safety test-embedding-batch test-embedding-provider clean distclean

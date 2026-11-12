@@ -2,6 +2,13 @@
 
 This map identifies dependencies and possible work; it does not authorize new slices or commit to a final order.
 
+## Source distribution
+
+The curated source-only archive is prepared from a named Git revision using an
+explicit inventory. Tcl, TEA, Cargo crates, ONNX Runtime and model artifacts are
+external prerequisites. Binary distributions and release publication are not
+part of this source-distribution work. The historical evidence remains in Git.
+
 ## Progressive consumer examples
 
 These examples consume the public library; they are separate from the native binding slices and do not themselves authorize changes to the binding.
@@ -84,3 +91,10 @@ Autonomous retrieval, its consumers and any later integration need their own con
 ### Slice 008 — batch inference and attention masking
 
 The additive batch API and its bounded right-padding and pooling behavior are formally accepted within the identified models, revisions, inputs and environments. Evidence and resource limits are in `CHARACTERIZATION.md` and `README.md`. General arbitrary masks, other input signatures, fixed batch sizes above one, dynamic hidden-size metadata, broader memory failure injection, concurrency and portability remain outside the tested scope.
+
+## Distribution validation status
+
+The source archive uses external TEA, Cargo crates and ONNX Runtime; the
+isolated source build and staged Tcl installation were exercised on the
+characterized Linux x86-64 environment. Release publication, other platforms
+and current CUDA execution remain separate, unverified decisions.

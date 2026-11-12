@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Source distribution
+
+- Add an explicit committed-source inventory and local archive generator with
+  SHA-256 manifests. Build dependencies and ONNX Runtime remain external.
+- Add a focused CPU provider and profiling test target.
+
 ### ONNX Runtime providers
 
 - Add explicit CPU/CUDA provider and CUDA device selection and optional ONNX
